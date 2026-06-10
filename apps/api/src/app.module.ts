@@ -11,6 +11,7 @@ import { EnrichmentModule } from './modules/enrichment/enrichment.module';
 import { ScoringModule } from './modules/scoring/scoring.module';
 import { SignalScorerModule } from './modules/signal-scorer/signal-scorer.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
+import { AccountsModule } from './modules/accounts/accounts.module';
 import { CrmAdapterModule } from './modules/crm-adapter/crm-adapter.module';
 import { CrmSyncModule } from './modules/crm-sync/crm-sync.module';
 import { DevModule } from './modules/dev/dev.module';
@@ -35,6 +36,7 @@ import { DevModule } from './modules/dev/dev.module';
     ScoringModule,
     SignalScorerModule,
     OrchestratorModule,
+    AccountsModule,
     CrmAdapterModule,
     CrmSyncModule,
     DevModule,
