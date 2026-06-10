@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ScoringService } from './scoring.service';
+import { RubricController } from './rubric.controller';
 
 /**
  * Scoring (component 2/5).
@@ -12,6 +13,7 @@ import { ScoringService } from './scoring.service';
  * insufficient at the Phase 2 validation gate.
  */
 @Module({
+  controllers: [RubricController],
   providers: [ScoringService],
   exports: [ScoringService],
 })

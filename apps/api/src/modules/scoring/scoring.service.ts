@@ -87,6 +87,64 @@ export class ScoringService {
   }
 
   /**
+   * Score and persist ONE account — used after enrichment lands so techno/
+   * firmographic fills are reflected without re-scoring the whole org.
+   */
+  async scoreAccount(orgId: string, accountId: string): Promise<ScoringResult | null> {
+    const rubric = await this.getActiveRubric(orgId);
+    if (!rubric) return null;
+
+    const [account] = await this.dbHandle.db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.orgId, orgId), eq(accounts.id, accountId)))
+      .limit(1);
+    if (!account) return null;
+
+    const result = applyRubric(account, rubric);
+    await this.dbHandle.db
+      .insert(scores)
+      .values({
+        orgId,
+        accountId,
+        fitScore: result.fitScore,
+        tier: result.tier,
+        computedAt: sql`now()`,
+      })
+      .onConflictDoUpdate({
+        target: [scores.orgId, scores.accountId],
+        set: { fitScore: result.fitScore, tier: result.tier, computedAt: sql`now()` },
+      });
+    return result;
+  }
+
+  /** Active rubric row (highest version) — powers the rubric editor API. */
+  async getActiveRubricRow(orgId: string) {
+    const [row] = await this.dbHandle.db
+      .select()
+      .from(icpRubrics)
+      .where(eq(icpRubrics.orgId, orgId))
+      .orderBy(desc(icpRubrics.version))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * Save an edited rubric as a NEW version (append-only — old versions stay
+   * for auditability), then re-score the whole org against it.
+   */
+  async saveRubricVersion(orgId: string, name: string, weights: Record<string, unknown>) {
+    const current = await this.getActiveRubricRow(orgId);
+    const nextVersion = (current?.version ?? 0) + 1;
+    const [row] = await this.dbHandle.db
+      .insert(icpRubrics)
+      .values({ orgId, version: nextVersion, name, weights })
+      .returning();
+    const rescore = await this.scoreAccountsForOrg(orgId);
+    return { rubric: row, rescored: rescore.scored };
+  }
+
+  /**
    * Compute score + breakdown for a single account on demand (for the
    * account-detail page). Does NOT persist — caller uses this for display.
    */
@@ -137,6 +195,12 @@ export interface RubricV1 {
   crmProviderDefault: number;
   hasWebsitePoints: number;
   hasWebsiteMissingPoints: number;
+  /**
+   * Optional technographics (Playbook Step 2). Keys are tool names matched
+   * case-insensitively against `enrichment.technologies` (string[] filled by
+   * the Enrichment job). Absent on pre-existing rubrics → 0 points, no error.
+   */
+  technologies?: Record<string, number>;
   tierThresholds: { tier1: number; tier2: number; tier3: number };
 }
 
@@ -235,6 +299,34 @@ export function applyRubric(account: AccountRow, rubric: RubricV1): ScoringResul
     points: websitePoints,
     reason: website ? 'has a website' : 'no website on record',
   });
+
+  // Technographics (optional — only when the rubric weights tools AND
+  // enrichment has run). Sum of matched tool weights.
+  if (rubric.technologies && Object.keys(rubric.technologies).length > 0) {
+    const stack = Array.isArray(enrichment.technologies)
+      ? (enrichment.technologies as unknown[]).filter((t): t is string => typeof t === 'string')
+      : [];
+    const stackLower = new Set(stack.map((t) => t.toLowerCase()));
+    let techPoints = 0;
+    const matched: string[] = [];
+    for (const [tool, points] of Object.entries(rubric.technologies)) {
+      if (stackLower.has(tool.toLowerCase())) {
+        techPoints += points;
+        matched.push(tool);
+      }
+    }
+    breakdown.push({
+      field: 'technologies',
+      value: matched.length > 0 ? matched.join(', ') : stack.length > 0 ? '(no target tools)' : null,
+      points: techPoints,
+      reason:
+        matched.length > 0
+          ? `uses target tools: ${matched.join(', ')}`
+          : stack.length > 0
+            ? 'tech stack known but no target tools found'
+            : 'tech stack unknown (not yet enriched)',
+    });
+  }
 
   const fitScore = breakdown.reduce((s, b) => s + b.points, 0);
   const tier = scoreToTier(fitScore, rubric.tierThresholds);

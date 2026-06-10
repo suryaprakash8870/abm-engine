@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, real, integer, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, real, integer, jsonb, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations';
 import { accounts } from './accounts';
 
@@ -24,6 +24,9 @@ export const scores = pgTable(
     awarenessStage: text('awareness_stage', {
       enum: ['identified', 'aware', 'engaged', 'considering', 'selecting'],
     }),
+    // Append-only stage transitions [{stage, at}] — feeds the Phase 2
+    // validation gate (what stage was the account in before it closed?).
+    stageHistory: jsonb('stage_history').$type<Array<{ stage: string; at: string }>>(),
     computedAt: timestamp('computed_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

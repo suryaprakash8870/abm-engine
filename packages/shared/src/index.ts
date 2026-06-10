@@ -34,6 +34,44 @@ export interface CrmAdapter {
   upsertAccount(input: UpsertAccountInput): Promise<{ externalId: string }>;
   upsertContact(input: UpsertContactInput): Promise<{ externalId: string }>;
   createTask(input: CreateTaskInput): Promise<{ externalId: string }>;
+
+  /**
+   * Closed-won/lost deal history — feeds the ICP win/loss analysis
+   * (Playbook Step 1) and the Phase 2 awareness-validation gate.
+   */
+  getDeals(params: { cursor?: string; limit?: number }): Promise<{
+    deals: CrmDeal[];
+    nextCursor?: string;
+  }>;
+
+  /**
+   * Idempotently create the custom field definitions we write back to
+   * (e.g. `abm_tier`). Safe to call before every write-back batch — adapters
+   * cache what they've already verified.
+   */
+  ensureCustomProperties(defs: CustomPropertyDef[]): Promise<void>;
+}
+
+export interface CrmDeal {
+  externalId: string;
+  name?: string;
+  amount?: number;
+  stage?: string;
+  isClosedWon: boolean;
+  isClosedLost: boolean;
+  createdAt?: string;
+  closedAt?: string;
+  /** Company external IDs this deal is associated with. */
+  accountExternalIds: string[];
+  properties?: Record<string, unknown>;
+}
+
+export interface CustomPropertyDef {
+  object: 'account' | 'contact';
+  /** Snake_case internal name, e.g. 'abm_tier'. */
+  name: string;
+  label: string;
+  type: 'number' | 'string';
 }
 
 export interface CrmAccount {

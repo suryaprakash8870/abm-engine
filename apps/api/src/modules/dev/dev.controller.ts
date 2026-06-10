@@ -137,7 +137,7 @@ export class DevController {
     const job = await this.crmSyncQueue.add(
       JOB_SYNC_ACCOUNTS,
       { orgId: body.orgId, provider: 'hubspot' },
-      { jobId: `sync:hubspot:${body.orgId}` }, // dedupe — only one active sync per org
+      { jobId: `sync-hubspot-${body.orgId}` }, // dedupe — only one active sync per org (no ':' — BullMQ forbids it)
     );
     return { jobId: job.id, queue: this.crmSyncQueue.name };
   }

@@ -3,11 +3,13 @@ import type {
   CrmAdapter,
   CrmAccount,
   CrmContact,
+  CrmDeal,
   CreateTaskInput,
+  CustomPropertyDef,
   UpsertAccountInput,
   UpsertContactInput,
 } from '@abm/shared';
-import { HubspotHttpClient } from './hubspot-http-client';
+import { HubspotHttpClient, HubspotHttpError } from './hubspot-http-client';
 
 /**
  * HubSpot adapter — first CRM target per ADR-015 / ADR-017.
@@ -111,6 +113,41 @@ export class HubspotAdapter implements CrmAdapter {
     };
   }
 
+  private static readonly DEAL_PROPERTIES = [
+    'dealname',
+    'amount',
+    'dealstage',
+    'closedate',
+    'createdate',
+    'hs_is_closed_won',
+    'hs_is_closed_lost',
+  ];
+
+  async getDeals(params: { cursor?: string; limit?: number }): Promise<{
+    deals: CrmDeal[];
+    nextCursor?: string;
+  }> {
+    const limit = Math.min(params.limit ?? 100, 100);
+    const qs = new URLSearchParams({
+      limit: String(limit),
+      properties: HubspotAdapter.DEAL_PROPERTIES.join(','),
+      associations: 'companies',
+      archived: 'false',
+    });
+    if (params.cursor) qs.set('after', params.cursor);
+
+    const cacheKey = `hubspot:deals:list:${qs.toString()}`;
+    const res = await this.http.get<HubspotListResponse<HubspotDeal>>(
+      `/crm/v3/objects/deals?${qs.toString()}`,
+      { cacheKey, cacheTtlSeconds: 300 },
+    );
+
+    return {
+      deals: res.results.map(normalizeDeal),
+      nextCursor: res.paging?.next?.after,
+    };
+  }
+
   // ── Writes (upsert semantics — hard rule #7) ──────────────────────────
 
   async upsertAccount(input: UpsertAccountInput): Promise<{ externalId: string }> {
@@ -196,6 +233,39 @@ export class HubspotAdapter implements CrmAdapter {
     return { externalId: created.id };
   }
 
+  // ── Custom property definitions (write-back fields) ──────────────────
+
+  /**
+   * Properties already confirmed to exist this process lifetime. Definition
+   * checks are metadata reads — once a property exists it never vanishes
+   * unless someone deletes it by hand, so per-process caching is safe.
+   */
+  private readonly ensuredProperties = new Set<string>();
+
+  async ensureCustomProperties(defs: CustomPropertyDef[]): Promise<void> {
+    for (const def of defs) {
+      const objectType = def.object === 'account' ? 'companies' : 'contacts';
+      const cacheKey = `${objectType}:${def.name}`;
+      if (this.ensuredProperties.has(cacheKey)) continue;
+
+      try {
+        await this.http.get(`/crm/v3/properties/${objectType}/${def.name}`);
+      } catch (err) {
+        if (!(err instanceof HubspotHttpError) || err.status !== 404) throw err;
+        await this.http.post(`/crm/v3/properties/${objectType}`, {
+          name: def.name,
+          label: def.label,
+          type: def.type === 'number' ? 'number' : 'string',
+          fieldType: def.type === 'number' ? 'number' : 'text',
+          // Default built-in groups — avoids a separate group-creation call.
+          groupName: def.object === 'account' ? 'companyinformation' : 'contactinformation',
+        });
+        this.logger.log(`Created HubSpot ${objectType} property '${def.name}'`);
+      }
+      this.ensuredProperties.add(cacheKey);
+    }
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────
 
   private async resolveCompanyId(matchKey: UpsertAccountInput['matchKey']): Promise<string | undefined> {
@@ -264,6 +334,31 @@ interface HubspotContact {
 interface HubspotTask {
   id: string;
   properties: Record<string, string | null | undefined>;
+}
+
+interface HubspotDeal {
+  id: string;
+  properties: Record<string, string | null | undefined>;
+  associations?: {
+    companies?: { results: Array<{ id: string; type: string }> };
+  };
+}
+
+function normalizeDeal(d: HubspotDeal): CrmDeal {
+  const props = d.properties ?? {};
+  const amount = props.amount ? Number(props.amount) : undefined;
+  return {
+    externalId: d.id,
+    name: props.dealname ?? undefined,
+    amount: Number.isFinite(amount) ? amount : undefined,
+    stage: props.dealstage ?? undefined,
+    isClosedWon: props.hs_is_closed_won === 'true',
+    isClosedLost: props.hs_is_closed_lost === 'true',
+    createdAt: props.createdate ?? undefined,
+    closedAt: props.closedate ?? undefined,
+    accountExternalIds: (d.associations?.companies?.results ?? []).map((r) => r.id),
+    properties: props,
+  };
 }
 
 function normalizeCompany(c: HubspotCompany): CrmAccount {

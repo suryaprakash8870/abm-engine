@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { accounts, createDb, scores } from '@abm/db';
+import { accounts, contacts, createDb, scores } from '@abm/db';
 import { DB_TOKEN } from '../../common/db/db.module';
 import { getCurrentTenant } from '../../common/tenant/tenant-context';
 import { ScoringService } from '../scoring/scoring.service';
@@ -40,7 +40,10 @@ export class AccountsService {
         updatedAt: accounts.updatedAt,
         fitScore: scores.fitScore,
         tier: scores.tier,
+        signalScore: scores.signalScore,
+        awarenessStage: scores.awarenessStage,
         scoreComputedAt: scores.computedAt,
+        source: accounts.source,
       })
       .from(accounts)
       .leftJoin(
@@ -67,6 +70,9 @@ export class AccountsService {
       website: pickProp(r.enrichment, 'website'),
       fitScore: r.fitScore,
       tier: r.tier,
+      signalScore: r.signalScore,
+      awarenessStage: r.awarenessStage,
+      source: r.source,
       scoreComputedAt: r.scoreComputedAt,
       enrichedAt: r.enrichedAt,
       createdAt: r.createdAt,
@@ -99,6 +105,8 @@ export class AccountsService {
         updatedAt: accounts.updatedAt,
         fitScore: scores.fitScore,
         tier: scores.tier,
+        signalScore: scores.signalScore,
+        awarenessStage: scores.awarenessStage,
         scoreComputedAt: scores.computedAt,
       })
       .from(accounts)
@@ -136,6 +144,8 @@ export class AccountsService {
       score: {
         fitScore: row.fitScore,
         tier: row.tier,
+        signalScore: row.signalScore,
+        awarenessStage: row.awarenessStage,
         computedAt: row.scoreComputedAt,
       },
       breakdown: explanation?.breakdown ?? null,
@@ -154,6 +164,7 @@ export class AccountsService {
   async summaryForCurrentOrg(): Promise<{
     total: number;
     tierCounts: { tier1: number; tier2: number; tier3: number; unscored: number };
+    awarenessCounts: Record<string, number>;
     lastScoredAt: string | null;
     avgFitScore: number | null;
   }> {
@@ -166,6 +177,11 @@ export class AccountsService {
         tier2: sql<number>`count(${scores.tier}) filter (where ${scores.tier} = 2)::int`,
         tier3: sql<number>`count(${scores.tier}) filter (where ${scores.tier} = 3)::int`,
         unscored: sql<number>`count(${accounts.id}) filter (where ${scores.fitScore} is null)::int`,
+        identified: sql<number>`count(${accounts.id}) filter (where ${scores.awarenessStage} = 'identified' or ${scores.awarenessStage} is null)::int`,
+        aware: sql<number>`count(${accounts.id}) filter (where ${scores.awarenessStage} = 'aware')::int`,
+        engaged: sql<number>`count(${accounts.id}) filter (where ${scores.awarenessStage} = 'engaged')::int`,
+        considering: sql<number>`count(${accounts.id}) filter (where ${scores.awarenessStage} = 'considering')::int`,
+        selecting: sql<number>`count(${accounts.id}) filter (where ${scores.awarenessStage} = 'selecting')::int`,
         lastScoredAt: sql<string | null>`max(${scores.computedAt})::text`,
         avgFitScore: sql<number | null>`avg(${scores.fitScore})::float`,
       })
@@ -184,12 +200,32 @@ export class AccountsService {
         tier3: row?.tier3 ?? 0,
         unscored: row?.unscored ?? 0,
       },
+      awarenessCounts: {
+        identified: row?.identified ?? 0,
+        aware: row?.aware ?? 0,
+        engaged: row?.engaged ?? 0,
+        considering: row?.considering ?? 0,
+        selecting: row?.selecting ?? 0,
+      },
       lastScoredAt: row?.lastScoredAt ?? null,
       avgFitScore:
         row?.avgFitScore !== undefined && row?.avgFitScore !== null
           ? Math.round(row.avgFitScore)
           : null,
     };
+  }
+
+  /** Contacts for one account, decision-makers first (Playbook Step 7). */
+  async contactsForAccount(accountId: string) {
+    const { orgId } = getCurrentTenant();
+    return this.dbHandle.db
+      .select()
+      .from(contacts)
+      .where(and(eq(contacts.orgId, orgId), eq(contacts.accountId, accountId)))
+      .orderBy(
+        sql`case ${contacts.role} when 'decision_maker' then 0 when 'champion' then 1 when 'influencer' then 2 else 3 end`,
+        asc(contacts.email),
+      );
   }
 }
 

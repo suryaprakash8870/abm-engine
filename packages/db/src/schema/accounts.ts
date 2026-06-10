@@ -19,6 +19,12 @@ export const accounts = pgTable(
     externalCrmProvider: text('external_crm_provider', {
       enum: ['hubspot', 'salesforce'],
     }),
+    // Where this account entered the system: synced from the customer's CRM,
+    // prospected via TAM search (Apollo), or added by hand. TAM accounts are
+    // the ones NOT yet in the CRM — kept separate in the UI (Phase 4).
+    source: text('source', { enum: ['crm', 'apollo', 'manual'] })
+      .notNull()
+      .default('crm'),
     // Enrichment payload (firmographics + technographics). Free-form by design;
     // shape evolves as providers/Phase 1 lands. See ADR-014.
     enrichment: jsonb('enrichment').$type<Record<string, unknown>>(),

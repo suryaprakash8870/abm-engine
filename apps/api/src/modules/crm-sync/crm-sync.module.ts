@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { CrmAdapterModule } from '../crm-adapter/crm-adapter.module';
+import { EnrichmentModule } from '../enrichment/enrichment.module';
 import { ScoringModule } from '../scoring/scoring.module';
 import { CrmSyncProcessor } from './crm-sync.processor';
 import { CrmSyncService } from './crm-sync.service';
+import { SyncSchedulerService } from './sync-scheduler.service';
 
 /**
  * crm-sync — the bridge module. Owns the worker that pulls accounts from the
@@ -12,8 +14,8 @@ import { CrmSyncService } from './crm-sync.service';
  * consumes them.
  */
 @Module({
-  imports: [CrmAdapterModule, ScoringModule],
-  providers: [CrmSyncService, CrmSyncProcessor],
-  exports: [CrmSyncService],
+  imports: [CrmAdapterModule, ScoringModule, EnrichmentModule],
+  providers: [CrmSyncService, CrmSyncProcessor, SyncSchedulerService],
+  exports: [CrmSyncService, SyncSchedulerService],
 })
 export class CrmSyncModule {}

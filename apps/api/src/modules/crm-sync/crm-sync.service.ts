@@ -1,9 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { sql } from 'drizzle-orm';
-import { accounts, createDb } from '@abm/db';
-import type { CrmProvider } from '@abm/shared';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { accounts, contacts, createDb, scores } from '@abm/db';
+import type { ContactRole, CrmAdapter, CrmProvider } from '@abm/shared';
 import { DB_TOKEN } from '../../common/db/db.module';
 import { CrmAdapterFactory } from '../crm-adapter/crm-adapter.factory';
+import { EnrichmentService } from '../enrichment/enrichment.service';
 import { ScoringService } from '../scoring/scoring.service';
 
 type DbHandle = ReturnType<typeof createDb>;
@@ -23,7 +24,7 @@ type DbHandle = ReturnType<typeof createDb>;
  * See UI_FLOW.md §"Progress UX" for the customer-facing principles.
  */
 export interface SyncProgress {
-  step: 'fetching' | 'upserting' | 'scoring' | 'done';
+  step: 'fetching' | 'upserting' | 'scoring' | 'writing-back' | 'done';
   current: number;
   total: number;
   percent: number;
@@ -33,7 +34,23 @@ export interface SyncProgress {
 export type ProgressCallback = (p: SyncProgress) => Promise<void> | void;
 
 const FETCH_BUDGET = 30; // % of total bar allocated to fetch+upsert
-const SCORE_BUDGET = 70; // remaining 70% for scoring (it touches every row)
+const SCORE_BUDGET = 40; // scoring touches every row but is local arithmetic
+const WRITEBACK_BUDGET = 30; // one CRM PATCH per scored account — the slow tail
+
+/**
+ * Write-back field definitions (Playbook Steps 5 + 11). Only abm_* fields are
+ * ever written — never a customer's own fields (ADR-010).
+ */
+const SCORE_PROPERTY_DEFS = [
+  { object: 'account', name: 'abm_tier', label: 'ABM Tier', type: 'number' },
+  { object: 'account', name: 'abm_fit_score', label: 'ABM Fit Score', type: 'number' },
+  { object: 'account', name: 'abm_signal_score', label: 'ABM Signal Score', type: 'number' },
+  { object: 'account', name: 'abm_awareness_stage', label: 'ABM Awareness Stage', type: 'string' },
+] as const;
+
+const CONTACT_PROPERTY_DEFS = [
+  { object: 'contact', name: 'abm_role', label: 'ABM Buying Role', type: 'string' },
+] as const;
 
 @Injectable()
 export class CrmSyncService {
@@ -43,6 +60,7 @@ export class CrmSyncService {
     @Inject(DB_TOKEN) private readonly dbHandle: DbHandle,
     private readonly crm: CrmAdapterFactory,
     private readonly scoring: ScoringService,
+    private readonly enrichment: EnrichmentService,
   ) {}
 
   async syncAccountsForOrg(
@@ -55,6 +73,8 @@ export class CrmSyncService {
     upserted: number;
     skippedNoDomain: number;
     scored: number;
+    writtenBack: number;
+    writeBackFailed: number;
   }> {
     const adapter = this.crm.forProvider(provider);
     const db = this.dbHandle.db;
@@ -143,16 +163,27 @@ export class CrmSyncService {
       });
     });
 
+    // Queue background enrichment for accounts never enriched (hard rule #2:
+    // enrichment NEVER runs inline — these are separate BullMQ jobs).
+    const enrichQueued = await this.enrichment.enqueueMissingForOrg(orgId);
+    if (enrichQueued > 0) {
+      this.logger.log(`Queued ${enrichQueued} enrichment jobs for org=${orgId}`);
+    }
+
+    // Push tier + fit score back to the CRM as abm_* custom properties
+    // (Playbook Step 5). Runs inside the same BullMQ job — never in a request.
+    const writeBack = await this.writeBackScores(orgId, provider, adapter, onProgress);
+
     await emit(onProgress, {
       step: 'done',
       current: scoringResult.scored,
       total: scoringResult.scored,
       percent: 100,
-      message: `Done — ${upserted} imported, ${scoringResult.scored} scored.`,
+      message: `Done — ${upserted} imported, ${scoringResult.scored} scored, ${writeBack.writtenBack} written back.`,
     });
 
     this.logger.log(
-      `Sync done for org=${orgId} provider=${provider}: pages=${pages} fetched=${fetched} upserted=${upserted} skipped=${skippedNoDomain} scored=${scoringResult.scored}`,
+      `Sync done for org=${orgId} provider=${provider}: pages=${pages} fetched=${fetched} upserted=${upserted} skipped=${skippedNoDomain} scored=${scoringResult.scored} writtenBack=${writeBack.writtenBack} writeBackFailed=${writeBack.writeBackFailed}`,
     );
     return {
       pages,
@@ -160,8 +191,213 @@ export class CrmSyncService {
       upserted,
       skippedNoDomain,
       scored: scoringResult.scored,
+      ...writeBack,
     };
   }
+
+  /**
+   * Write each scored account's tier + fit score back to its CRM record.
+   *
+   * Scope: only accounts that came FROM this provider (have an externalCrmId)
+   * — seeded/synthetic accounts are skipped naturally. Per-row failures are
+   * counted, logged, and never abort the batch: write-back is enrichment,
+   * not a transaction (re-running the sync retries them — PATCH is idempotent).
+   */
+  private async writeBackScores(
+    orgId: string,
+    provider: CrmProvider,
+    adapter: CrmAdapter,
+    onProgress?: ProgressCallback,
+  ): Promise<{ writtenBack: number; writeBackFailed: number }> {
+    const rows = await this.dbHandle.db
+      .select({
+        externalCrmId: accounts.externalCrmId,
+        domain: accounts.domain,
+        fitScore: scores.fitScore,
+        tier: scores.tier,
+        signalScore: scores.signalScore,
+        awarenessStage: scores.awarenessStage,
+      })
+      .from(scores)
+      .innerJoin(accounts, eq(scores.accountId, accounts.id))
+      .where(
+        and(
+          eq(scores.orgId, orgId),
+          eq(accounts.orgId, orgId),
+          eq(accounts.externalCrmProvider, provider),
+          isNotNull(accounts.externalCrmId),
+        ),
+      );
+
+    if (rows.length === 0) return { writtenBack: 0, writeBackFailed: 0 };
+
+    await adapter.ensureCustomProperties([...SCORE_PROPERTY_DEFS]);
+
+    let writtenBack = 0;
+    let writeBackFailed = 0;
+    for (const row of rows) {
+      try {
+        await adapter.upsertAccount({
+          matchKey: { externalId: row.externalCrmId! },
+          properties: {
+            // Empty string clears OUR field in HubSpot when a rubric change
+            // drops the tier — a stale tier is worse than a blank one.
+            abm_tier: row.tier ?? '',
+            abm_fit_score: row.fitScore,
+            abm_signal_score: row.signalScore,
+            abm_awareness_stage: row.awarenessStage ?? '',
+          },
+        });
+        writtenBack += 1;
+      } catch (err) {
+        writeBackFailed += 1;
+        this.logger.warn(
+          `Write-back failed for ${row.domain} (${provider} ${row.externalCrmId}): ${(err as Error).message}`,
+        );
+      }
+      await emit(onProgress, {
+        step: 'writing-back',
+        current: writtenBack + writeBackFailed,
+        total: rows.length,
+        percent:
+          FETCH_BUDGET +
+          SCORE_BUDGET +
+          Math.floor(((writtenBack + writeBackFailed) / rows.length) * WRITEBACK_BUDGET),
+        message: `Writing scores to CRM — ${writtenBack + writeBackFailed} of ${rows.length}`,
+      });
+    }
+
+    return { writtenBack, writeBackFailed };
+  }
+
+  /**
+   * Contacts sync (Playbook Step 7) — for every CRM-sourced account, pull its
+   * contacts, classify the buying role from the job title, store them, and
+   * write `abm_role` back to the CRM contact.
+   *
+   * Idempotent: upserts on (org_id, email); contacts without an email are
+   * skipped (no stable dedupe key — by design, hard rule #7 matches on
+   * email/phone).
+   */
+  async syncContactsForOrg(
+    orgId: string,
+    provider: CrmProvider,
+  ): Promise<{ accounts: number; contacts: number; skippedNoEmail: number; roleWriteBackFailed: number }> {
+    const adapter = this.crm.forProvider(provider);
+    const db = this.dbHandle.db;
+
+    const orgAccounts = await db
+      .select({ id: accounts.id, externalCrmId: accounts.externalCrmId })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.orgId, orgId),
+          eq(accounts.externalCrmProvider, provider),
+          isNotNull(accounts.externalCrmId),
+        ),
+      );
+
+    let upserted = 0;
+    let skippedNoEmail = 0;
+    let roleWriteBackFailed = 0;
+    let rolePropertyEnsured = false;
+
+    for (const account of orgAccounts) {
+      let cursor: string | undefined;
+      do {
+        const page = await adapter.getContacts({
+          accountId: account.externalCrmId!,
+          cursor,
+          limit: 100,
+        });
+
+        for (const c of page.contacts) {
+          if (!c.email) {
+            skippedNoEmail += 1;
+            continue;
+          }
+          const role = classifyRole(c.title);
+
+          await db
+            .insert(contacts)
+            .values({
+              orgId,
+              accountId: account.id,
+              email: c.email.toLowerCase(),
+              phone: c.phone ?? null,
+              firstName: c.firstName ?? null,
+              lastName: c.lastName ?? null,
+              title: c.title ?? null,
+              role,
+              externalCrmId: c.externalId,
+              externalCrmProvider: provider,
+            })
+            .onConflictDoUpdate({
+              target: [contacts.orgId, contacts.email],
+              set: {
+                accountId: account.id,
+                phone: c.phone ?? null,
+                firstName: c.firstName ?? null,
+                lastName: c.lastName ?? null,
+                title: c.title ?? null,
+                role,
+                externalCrmId: c.externalId,
+                externalCrmProvider: provider,
+                updatedAt: sql`now()`,
+              },
+            });
+          upserted += 1;
+
+          // Role write-back (Playbook Step 7: "upload to CRM with custom
+          // properties … stakeholder role"). Only our abm_role field.
+          try {
+            if (!rolePropertyEnsured) {
+              await adapter.ensureCustomProperties([...CONTACT_PROPERTY_DEFS]);
+              rolePropertyEnsured = true;
+            }
+            await adapter.upsertContact({
+              matchKey: { externalId: c.externalId },
+              properties: { abm_role: role },
+            });
+          } catch (err) {
+            roleWriteBackFailed += 1;
+            this.logger.warn(
+              `abm_role write-back failed for ${c.email}: ${(err as Error).message}`,
+            );
+          }
+        }
+        cursor = page.nextCursor;
+      } while (cursor);
+    }
+
+    this.logger.log(
+      `Contacts sync done for org=${orgId}: accounts=${orgAccounts.length} contacts=${upserted} skippedNoEmail=${skippedNoEmail} roleWbFailed=${roleWriteBackFailed}`,
+    );
+    return {
+      accounts: orgAccounts.length,
+      contacts: upserted,
+      skippedNoEmail,
+      roleWriteBackFailed,
+    };
+  }
+}
+
+/**
+ * Title → buying role heuristic (Playbook Step 7). Regex now; AI
+ * classification is a Phase 4 upgrade if titles prove too messy.
+ */
+export function classifyRole(title: string | null | undefined): ContactRole {
+  if (!title || title.trim().length === 0) return 'unknown';
+  const t = title.toLowerCase();
+  if (
+    /\b(ceo|cfo|cto|coo|cmo|cro|cio|chief|founder|co-?founder|owner|president|vp|vice president|head of|director)\b/.test(t)
+  ) {
+    return 'decision_maker';
+  }
+  if (/\b(manager|lead|principal|senior|architect)\b/.test(t)) {
+    return 'champion';
+  }
+  return 'influencer';
 }
 
 async function emit(cb: ProgressCallback | undefined, p: SyncProgress) {

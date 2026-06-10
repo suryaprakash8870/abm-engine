@@ -227,6 +227,100 @@ export class IcpAnalyzerService {
     }).sort((a, b) => b.fitScore - a.fitScore);
   }
 
+  // ── 4. Analyze patterns from LIVE CRM deals (Playbook Step 1) ─────────────
+
+  /**
+   * Same pattern analysis as the CSV path, but fed by closed-won deals pulled
+   * straight from the CRM — plus the revenue metrics the playbook calls for
+   * (ACV, sales-cycle length, win rate) that a flat account CSV can't show.
+   */
+  analyzeDeals(
+    deals: Array<{
+      amount?: number;
+      isClosedWon: boolean;
+      isClosedLost: boolean;
+      createdAt?: string;
+      closedAt?: string;
+      accountExternalIds: string[];
+    }>,
+    accountsByExternalId: Map<
+      string,
+      { industry?: string | null; employees?: string | number | null; country?: string | null }
+    >,
+  ): {
+    dealStats: {
+      total: number;
+      won: number;
+      lost: number;
+      winRate: number;
+      avgAcv: number | null;
+      avgSalesCycleDays: number | null;
+    };
+    patterns: PatternField[];
+    derivedRules: DerivedRule[];
+  } {
+    const won = deals.filter((d) => d.isClosedWon);
+    const lost = deals.filter((d) => d.isClosedLost);
+
+    const amounts = won.map((d) => d.amount).filter((a): a is number => typeof a === 'number');
+    const cycles = won
+      .map((d) =>
+        d.createdAt && d.closedAt
+          ? (new Date(d.closedAt).getTime() - new Date(d.createdAt).getTime()) / 86_400_000
+          : null,
+      )
+      .filter((c): c is number => c !== null && c >= 0);
+
+    // Build pseudo-rows from the accounts behind won deals, then reuse the
+    // same frequency → insight → rules machinery as the CSV path.
+    const wonAccountRows: Array<Record<string, string>> = [];
+    for (const deal of won) {
+      for (const extId of deal.accountExternalIds) {
+        const acc = accountsByExternalId.get(extId);
+        if (!acc) continue;
+        wonAccountRows.push({
+          industry: String(acc.industry ?? ''),
+          employees: String(acc.employees ?? ''),
+          country: String(acc.country ?? ''),
+        });
+      }
+    }
+
+    const patterns: PatternField[] = [];
+    for (const field of ['industry', 'country', 'employees'] as const) {
+      const values = wonAccountRows.map((r) => {
+        const v = (r[field] ?? '').trim();
+        if (field === 'employees') return this.bucketEmployees(v);
+        return v || '(blank)';
+      });
+      const freq = this.frequency(values);
+      const topValues = freq.slice(0, 6);
+      if (topValues.length === 0) continue;
+      patterns.push({
+        field,
+        rawColumn: `crm:${field}`,
+        topValues,
+        insight: this.buildInsight(field, topValues, wonAccountRows.length),
+      });
+    }
+
+    return {
+      dealStats: {
+        total: deals.length,
+        won: won.length,
+        lost: lost.length,
+        winRate:
+          won.length + lost.length > 0
+            ? Math.round((won.length / (won.length + lost.length)) * 100)
+            : 0,
+        avgAcv: amounts.length > 0 ? Math.round(amounts.reduce((s, a) => s + a, 0) / amounts.length) : null,
+        avgSalesCycleDays: cycles.length > 0 ? Math.round(cycles.reduce((s, c) => s + c, 0) / cycles.length) : null,
+      },
+      patterns,
+      derivedRules: this.deriveRules(patterns, wonAccountRows.length),
+    };
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private frequency(values: string[]): FreqEntry[] {

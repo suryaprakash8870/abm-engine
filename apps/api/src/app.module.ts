@@ -16,6 +16,9 @@ import { CrmAdapterModule } from './modules/crm-adapter/crm-adapter.module';
 import { CrmSyncModule } from './modules/crm-sync/crm-sync.module';
 import { DevModule } from './modules/dev/dev.module';
 import { IcpAnalyzerModule } from './modules/icp-analyzer/icp-analyzer.module';
+import { SettingsModule } from './modules/settings/settings.module';
+import { ValidationModule } from './modules/validation/validation.module';
+import { GtmModule } from './modules/gtm/gtm.module';
 
 @Module({
   imports: [
@@ -42,6 +45,9 @@ import { IcpAnalyzerModule } from './modules/icp-analyzer/icp-analyzer.module';
     CrmSyncModule,
     DevModule,
     IcpAnalyzerModule,
+    SettingsModule,
+    ValidationModule,
+    GtmModule,
   ],
 })
 export class AppModule {}

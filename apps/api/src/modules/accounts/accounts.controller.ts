@@ -37,4 +37,11 @@ export class AccountsController {
   async byId(@Param('id') id: string) {
     return this.accounts.getOneForCurrentOrg(id);
   }
+
+  /** Stakeholder map for an account (Playbook Step 7). */
+  @Get(':id/contacts')
+  async contacts(@Param('id') id: string) {
+    const rows = await this.accounts.contactsForAccount(id);
+    return { count: rows.length, contacts: rows };
+  }
 }
