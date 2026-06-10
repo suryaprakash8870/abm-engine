@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { apiFetch } from '@/lib/api-client';
@@ -110,10 +109,7 @@ export default function AccountDetailPage() {
   if (detail.isError) {
     return (
       <main className="mx-auto max-w-4xl px-6 py-10">
-        <Link href="/accounts" className="text-sm text-neutral-500 hover:underline">
-          ← Back to accounts
-        </Link>
-        <div className="mt-6 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
           {(detail.error as Error).message}
         </div>
       </main>
@@ -132,10 +128,6 @@ export default function AccountDetailPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
-      <Link href="/accounts" className="text-sm text-neutral-500 hover:underline">
-        ← Back to accounts
-      </Link>
-
       {/* ─── Hero ───────────────────────────────────────────────── */}
       <header className="mt-4 flex flex-wrap items-end justify-between gap-6 border-b border-neutral-200 pb-6 dark:border-neutral-800">
         <div>

@@ -14,6 +14,7 @@ import { CrmAdapterFactory } from '../crm-adapter/crm-adapter.factory';
 import { HubspotHttpError } from '../crm-adapter/hubspot/hubspot-http-client';
 import { QUEUES } from '../../common/queue/queue.constants';
 import { JOB_SYNC_ACCOUNTS } from '../crm-sync/crm-sync.processor';
+import { DevSeedService } from './dev-seed.service';
 
 /**
  * Dev-only smoke endpoints. NOT for production — these bypass tenant auth and
@@ -27,6 +28,7 @@ export class DevController {
   constructor(
     private readonly crm: CrmAdapterFactory,
     private readonly config: ConfigService,
+    private readonly seed: DevSeedService,
     @InjectQueue(QUEUES.CRM_SYNC) private readonly crmSyncQueue: Queue,
   ) {}
 
@@ -110,6 +112,19 @@ export class DevController {
         associatedContactExternalId: body.associatedContactExternalId,
       }),
     );
+  }
+
+  /**
+   * Seed 30 synthetic B2B accounts directly into Postgres (no HubSpot needed).
+   * Upserts on (org_id, domain) so it's safe to re-run — existing HubSpot rows
+   * won't be touched because their domain values differ.
+   */
+  @Post('seed/accounts')
+  async seedAccounts(@Body() body: { orgId: string }) {
+    if (!body?.orgId) {
+      throw new ServiceUnavailableException('orgId required in body');
+    }
+    return this.seed.seedAccounts(body.orgId);
   }
 
   /** Enqueue a sync job to pull all HubSpot companies into our accounts table. */

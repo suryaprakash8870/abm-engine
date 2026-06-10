@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useSyncFromHubspot } from '@/lib/use-sync-from-hubspot';
+import { useSeedAccounts } from '@/lib/use-seed-accounts';
 import { SyncProgressBar } from '@/components/sync-progress';
 
 type Account = {
@@ -59,6 +60,7 @@ function TierBadge({ tier }: { tier: Account['tier'] }) {
 export default function AccountsPage() {
   const accounts = useAccounts();
   const sync = useSyncFromHubspot();
+  const seedMutation = useSeedAccounts();
   const router = useRouter();
   const [search, setSearch] = useState('');
 
@@ -85,14 +87,35 @@ export default function AccountsPage() {
               : `${accounts.data?.count ?? 0} accounts · ${tierCount(1)} Tier 1 · ${tierCount(2)} Tier 2 · ${tierCount(3)} Tier 3 · ${tierCount(null)} unscored / dropped`}
           </p>
         </div>
-        <button
-          onClick={() => sync.mutate()}
-          disabled={sync.isPending}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-        >
-          {sync.isPending ? 'Syncing…' : 'Sync from HubSpot'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => seedMutation.mutate()}
+            disabled={seedMutation.isPending || sync.isPending}
+            title="Insert 30 synthetic B2B accounts with varied industries/sizes — no HubSpot needed"
+            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 shadow-sm hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-900"
+          >
+            {seedMutation.isPending ? 'Seeding…' : 'Seed dummy data'}
+          </button>
+          <button
+            onClick={() => sync.mutate()}
+            disabled={sync.isPending || seedMutation.isPending}
+            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+          >
+            {sync.isPending ? 'Syncing…' : 'Sync from HubSpot'}
+          </button>
+        </div>
       </header>
+
+      {seedMutation.isSuccess && (
+        <div className="mb-4 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+          Seeded {(seedMutation.data as { seeded: number; scored: number }).seeded} accounts · scored {(seedMutation.data as { seeded: number; scored: number }).scored}.
+        </div>
+      )}
+      {seedMutation.isError && (
+        <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          Seed failed: {(seedMutation.error as Error)?.message}
+        </div>
+      )}
 
       {sync.isPending && (
         <div className="mb-4">

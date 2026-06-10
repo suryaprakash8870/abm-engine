@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
 import { useSyncFromHubspot } from '@/lib/use-sync-from-hubspot';
@@ -109,19 +108,11 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
-      <header className="mb-10 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">ABM Engine</h1>
-          <p className="mt-2 text-sm text-neutral-500">
-            CRM-agnostic intelligence layer · Phase 1 in progress · last scored {formatTime(s.lastScoredAt)}
-          </p>
-        </div>
-        <Link
-          href="/accounts"
-          className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
-        >
-          Open accounts →
-        </Link>
+      <header className="mb-10">
+        <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="mt-2 text-sm text-neutral-500">
+          CRM-agnostic intelligence layer · Phase 1 in progress · last scored {formatTime(s.lastScoredAt)}
+        </p>
       </header>
 
       {/* ─── Live numbers ─────────────────────────────────────── */}
