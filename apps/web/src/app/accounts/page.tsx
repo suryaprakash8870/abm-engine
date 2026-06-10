@@ -20,6 +20,9 @@ type Account = {
   website: string | null;
   fitScore: number | null;
   tier: 1 | 2 | 3 | null;
+  signalScore: number | null;
+  awarenessStage: 'identified' | 'aware' | 'engaged' | 'considering' | 'selecting' | null;
+  source: 'crm' | 'apollo' | 'manual';
   scoreComputedAt: string | null;
   enrichedAt: string | null;
   createdAt: string;
@@ -55,6 +58,44 @@ function TierBadge({ tier }: { tier: Account['tier'] }) {
       </span>
     );
   return <span className="text-neutral-500">—</span>;
+}
+
+const STAGE_STYLES: Record<
+  NonNullable<Account['awarenessStage']>,
+  { label: string; className: string }
+> = {
+  identified: {
+    label: 'Identified',
+    className: 'bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
+  },
+  aware: {
+    label: 'Aware',
+    className: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+  },
+  engaged: {
+    label: 'Engaged',
+    className: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300',
+  },
+  considering: {
+    label: 'Considering',
+    className: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  },
+  selecting: {
+    label: 'Selecting',
+    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  },
+};
+
+function StageBadge({ stage }: { stage: Account['awarenessStage'] }) {
+  if (!stage) return <span className="text-neutral-500">—</span>;
+  const s = STAGE_STYLES[stage];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${s.className}`}
+    >
+      {s.label}
+    </span>
+  );
 }
 
 export default function AccountsPage() {
@@ -151,7 +192,7 @@ export default function AccountsPage() {
         <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-800">
           <thead className="bg-neutral-50 dark:bg-neutral-900">
             <tr>
-              {['Fit', 'Tier', 'Domain', 'Name', 'Industry', 'Employees', 'Country', 'CRM'].map((h) => (
+              {['Fit', 'Tier', 'Signal', 'Stage', 'Domain', 'Name', 'Industry', 'Employees', 'Country', 'CRM'].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500"
@@ -164,7 +205,7 @@ export default function AccountsPage() {
           <tbody className="divide-y divide-neutral-200 bg-white dark:divide-neutral-800 dark:bg-neutral-950">
             {filtered.length === 0 && !accounts.isLoading && (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-sm text-neutral-500">
+                <td colSpan={10} className="px-4 py-12 text-center text-sm text-neutral-500">
                   No accounts. Click <strong>Sync from HubSpot</strong> to pull them in.
                 </td>
               </tr>
@@ -180,6 +221,12 @@ export default function AccountsPage() {
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm">
                   <TierBadge tier={a.tier} />
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold tabular-nums">
+                  {a.signalScore ? a.signalScore : <span className="font-normal text-neutral-500">—</span>}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm">
+                  <StageBadge stage={a.awarenessStage} />
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm font-medium">{a.domain}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm">{a.name ?? '—'}</td>

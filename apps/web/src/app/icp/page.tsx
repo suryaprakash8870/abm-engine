@@ -188,7 +188,7 @@ export default function IcpLabPage() {
           <div>
             <p className="mb-2 text-xs font-medium text-neutral-700 dark:text-neutral-300">Won accounts (past CRM data)</p>
             <FileDropZone label="Won accounts CSV" accept=".csv,.txt" onChange={setWonFile} />
-            <p className="mt-1 text-xs text-neutral-400">Needs columns like: industry, employees, country. Include a <code>status</code> column with "closed_won" to filter.</p>
+            <p className="mt-1 text-xs text-neutral-400">Needs columns like: industry, employees, country. Include a <code>status</code> column with &quot;closed_won&quot; to filter.</p>
           </div>
           <div>
             <p className="mb-2 text-xs font-medium text-neutral-700 dark:text-neutral-300">New prospects (Apollo / dummy export)</p>

@@ -1,22 +1,29 @@
 'use client';
 
+import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const NAV_LINKS = [
-  { href: '/', label: 'Dashboard' },
+const NAV_LINKS: Array<{ href: Route; label: string }> = [
+  // Cast: /dashboard and /settings aren't in the generated typed-routes map
+  // until `next dev`/`next build` regenerates .next/types.
+  { href: '/dashboard' as Route, label: 'Dashboard' },
   { href: '/accounts', label: 'Accounts' },
+  { href: '/accounts/tam' as Route, label: 'TAM' },
   { href: '/icp', label: 'ICP Lab' },
+  { href: '/settings' as Route, label: 'Settings' },
 ];
 
 export function TopNav() {
   const pathname = usePathname();
 
-  // An account detail page is "inside" accounts — highlight the parent
-  const isActive = (href: string) => {
-    if (href === '/') return pathname === '/';
-    return pathname === href || pathname.startsWith(href + '/');
-  };
+  // A child page is "inside" its parent — highlight the most specific
+  // matching link (so /accounts/tam highlights TAM, not Accounts).
+  const activeHref = NAV_LINKS.filter(
+    (l) =>
+      pathname === l.href || (l.href !== '/' && pathname.startsWith(l.href + '/')),
+  ).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  const isActive = (href: string) => href === activeHref;
 
   return (
     <nav className="sticky top-0 z-40 border-b border-neutral-200 bg-white/90 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
@@ -95,7 +102,7 @@ function Breadcrumb({ pathname }: { pathname: string }) {
   );
 }
 
-type Crumb = { href: string; label: string };
+type Crumb = { href: Route; label: string };
 
 function buildCrumbs(pathname: string): Crumb[] {
   const parts = pathname.split('/').filter(Boolean);
@@ -110,9 +117,17 @@ function buildCrumbs(pathname: string): Crumb[] {
       crumbs.push({ href: '/accounts', label: 'Accounts' });
     } else if (part === 'icp') {
       crumbs.push({ href: '/icp', label: 'ICP Lab' });
+    } else if (part === 'tam') {
+      crumbs.push({ href: accumulated as Route, label: 'TAM' });
+    } else if (part === 'settings') {
+      crumbs.push({ href: accumulated as Route, label: 'Settings' });
+    } else if (part === 'rubric') {
+      crumbs.push({ href: accumulated as Route, label: 'Rubric' });
+    } else if (part === 'dashboard') {
+      crumbs.push({ href: accumulated as Route, label: 'Dashboard' });
     } else {
       // Dynamic segment (account ID) — show a short label
-      crumbs.push({ href: accumulated, label: shortId(part) });
+      crumbs.push({ href: accumulated as Route, label: shortId(part) });
     }
   }
 

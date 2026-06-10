@@ -11,6 +11,32 @@ type Breakdown = {
   reason: string;
 };
 
+type AwarenessStage = 'identified' | 'aware' | 'engaged' | 'considering' | 'selecting';
+
+type Contact = {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  title: string | null;
+  role: 'decision_maker' | 'champion' | 'influencer' | 'unknown';
+};
+
+type ContactsResponse = { count: number; contacts: Contact[] };
+
+type Signal = {
+  id: string;
+  type: string;
+  party: 'first' | 'second' | 'third';
+  source: string | null;
+  weight: number;
+  occurredAt: string;
+  ingestedAt: string;
+};
+
+type SignalsResponse = { count: number; signals: Signal[] };
+
 type AccountDetail = {
   account: {
     id: string;
@@ -30,6 +56,8 @@ type AccountDetail = {
   score: {
     fitScore: number | null;
     tier: 1 | 2 | 3 | null;
+    signalScore: number | null;
+    awarenessStage: AwarenessStage | null;
     computedAt: string | null;
   };
   breakdown: Breakdown[] | null;
@@ -80,6 +108,99 @@ function TierBadge({ tier, big = false }: { tier: AccountDetail['score']['tier']
   );
 }
 
+const STAGE_STYLES: Record<AwarenessStage, { label: string; className: string }> = {
+  identified: {
+    label: 'Identified',
+    className: 'bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
+  },
+  aware: {
+    label: 'Aware',
+    className: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+  },
+  engaged: {
+    label: 'Engaged',
+    className: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300',
+  },
+  considering: {
+    label: 'Considering',
+    className: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  },
+  selecting: {
+    label: 'Selecting',
+    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  },
+};
+
+function StageBadge({ stage, big = false }: { stage: AwarenessStage; big?: boolean }) {
+  const sizing = big ? 'px-3 py-1 text-sm' : 'px-2 py-0.5 text-xs';
+  const s = STAGE_STYLES[stage];
+  return (
+    <span className={`inline-flex items-center rounded-full font-medium ${s.className} ${sizing}`}>
+      {s.label}
+    </span>
+  );
+}
+
+const ROLE_STYLES: Record<Contact['role'], { label: string; className: string }> = {
+  decision_maker: {
+    label: 'Decision Maker',
+    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  },
+  champion: {
+    label: 'Champion',
+    className: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300',
+  },
+  influencer: {
+    label: 'Influencer',
+    className: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+  },
+  unknown: {
+    label: 'Unknown',
+    className: 'bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
+  },
+};
+
+function RoleBadge({ role }: { role: Contact['role'] }) {
+  const r = ROLE_STYLES[role] ?? ROLE_STYLES.unknown;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${r.className}`}
+    >
+      {r.label}
+    </span>
+  );
+}
+
+const PARTY_STYLES: Record<Signal['party'], { label: string; className: string }> = {
+  first: {
+    label: '1st',
+    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  },
+  second: {
+    label: '2nd',
+    className: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  },
+  third: {
+    label: '3rd',
+    className: 'bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
+  },
+};
+
+function PartyBadge({ party }: { party: Signal['party'] }) {
+  const p = PARTY_STYLES[party] ?? PARTY_STYLES.third;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${p.className}`}
+    >
+      {p.label}
+    </span>
+  );
+}
+
+function contactName(c: Contact): string {
+  return [c.firstName, c.lastName].filter(Boolean).join(' ') || '—';
+}
+
 function PointsCell({ points }: { points: number }) {
   if (points === 0)
     return <span className="text-neutral-500">0</span>;
@@ -95,6 +216,16 @@ export default function AccountDetailPage() {
   const detail = useQuery<AccountDetail>({
     queryKey: ['account', id],
     queryFn: () => apiFetch<AccountDetail>(`/api/accounts/${id}`),
+    enabled: Boolean(id),
+  });
+  const contacts = useQuery<ContactsResponse>({
+    queryKey: ['account-contacts', id],
+    queryFn: () => apiFetch<ContactsResponse>(`/api/accounts/${id}/contacts`),
+    enabled: Boolean(id),
+  });
+  const signals = useQuery<SignalsResponse>({
+    queryKey: ['account-signals', id],
+    queryFn: () => apiFetch<SignalsResponse>(`/api/signals?accountId=${id}`),
     enabled: Boolean(id),
   });
 
@@ -152,8 +283,15 @@ export default function AccountDetailPage() {
               {score.fitScore === null ? '—' : score.fitScore}
             </div>
           </div>
-          <div className="pb-1">
+          {score.signalScore !== null && (
+            <div>
+              <div className="text-xs uppercase tracking-wider text-neutral-500">Signal</div>
+              <div className="mt-1 text-4xl font-semibold tabular-nums">{score.signalScore}</div>
+            </div>
+          )}
+          <div className="flex flex-col items-start gap-1.5 pb-1">
             <TierBadge tier={score.tier} big />
+            {score.awarenessStage && <StageBadge stage={score.awarenessStage} big />}
           </div>
         </div>
       </header>
@@ -247,6 +385,112 @@ export default function AccountDetailPage() {
               : '(no enrichment data yet)'}
           </pre>
         </details>
+      </section>
+
+      {/* ─── Stakeholders ────────────────────────────────────────── */}
+      <section className="mt-8">
+        <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-neutral-500">
+          Stakeholders
+        </h2>
+
+        {contacts.isLoading && <p className="text-sm text-neutral-500">Loading contacts…</p>}
+
+        {contacts.isError && (
+          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            {(contacts.error as Error).message}
+          </div>
+        )}
+
+        {contacts.data && contacts.data.contacts.length === 0 && (
+          <div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-6 text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900">
+            No contacts synced yet — contacts sync runs automatically after each account sync.
+          </div>
+        )}
+
+        {contacts.data && contacts.data.contacts.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
+            <table className="min-w-full divide-y divide-neutral-200 dark:divide-neutral-800">
+              <thead className="bg-neutral-50 dark:bg-neutral-900">
+                <tr>
+                  {['Name', 'Title', 'Email', 'Role'].map((h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-neutral-500"
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-200 bg-white dark:divide-neutral-800 dark:bg-neutral-950">
+                {contacts.data.contacts.map((c) => (
+                  <tr key={c.id}>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm font-medium">
+                      {contactName(c)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-neutral-600 dark:text-neutral-400">
+                      {c.title ?? '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-neutral-500">
+                      {c.email ?? '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm">
+                      <RoleBadge role={c.role} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* ─── Recent signals ──────────────────────────────────────── */}
+      <section className="mt-8">
+        <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-neutral-500">
+          Recent signals
+        </h2>
+
+        {signals.isLoading && <p className="text-sm text-neutral-500">Loading signals…</p>}
+
+        {signals.isError && (
+          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            {(signals.error as Error).message}
+          </div>
+        )}
+
+        {signals.data && signals.data.signals.length === 0 && (
+          <div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-6 text-sm text-neutral-500 dark:border-neutral-800 dark:bg-neutral-900">
+            No signals yet — POST /api/signals or wait for tracker events.
+          </div>
+        )}
+
+        {signals.data && signals.data.signals.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
+            <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+              {[...signals.data.signals]
+                .sort(
+                  (a, b) =>
+                    new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+                )
+                .map((s) => (
+                  <li
+                    key={s.id}
+                    className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 bg-white px-4 py-3 dark:bg-neutral-950"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-sm">{s.type}</span>
+                      <PartyBadge party={s.party} />
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-neutral-500">
+                      <span className="tabular-nums">weight {s.weight}</span>
+                      <span>{new Date(s.occurredAt).toLocaleDateString()}</span>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
       </section>
     </main>
   );
