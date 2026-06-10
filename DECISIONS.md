@@ -206,6 +206,73 @@
 
 ---
 
+## ADR-018: Supabase JWTs verified locally (HS256) + first-login auto-provisioning
+**Date:** 2026-06-11 · **Status:** Accepted
+
+**Decision:** The API verifies Supabase access tokens locally with `SUPABASE_JWT_SECRET` (HS256, `jsonwebtoken`) — no network call per request. A verified-but-unknown user is auto-provisioned: new org (named from the email domain) + `users` row as `owner`. The Phase 0 `x-org-id` header survives as a dev-only fallback, rejected when `NODE_ENV=production`.
+
+**Why:** Local verification is fast and keeps Supabase off the request hot path. Auto-provisioning keeps onboarding self-serve — no admin step between sign-up and using the product. The dev fallback preserves seeded-data/curl workflows without ever being a production bypass.
+
+**Rejected:**
+- **Per-request token check against Supabase's API** — adds a network hop to every request.
+- **Manual org provisioning** — dead end between sign-up and first use.
+
+**Watch-out:** Supabase projects created after mid-2025 may sign tokens with asymmetric keys (ES256/JWKS) instead of the legacy HS256 secret. If verification fails on a fresh project, swap `SupabaseAuthService.verifyToken` to JWKS verification.
+
+---
+
+## ADR-019: Tier/fit write-back ships in Phase 1, inside the sync job
+**Date:** 2026-06-11 · **Status:** Accepted
+
+**Decision:** After scoring, the sync job writes `abm_tier` + `abm_fit_score` back to each CRM-sourced account as custom properties (created idempotently via a new `ensureCustomProperties` on the `CrmAdapter` interface). Only `abm_*` fields are ever touched (ADR-010 holds). Per-row failures are logged + counted, never abort the batch. A rubric change that drops an account's tier clears our field (empty string) — a stale tier in the CRM is worse than a blank one.
+
+**Why:** This is the half of Playbook Step 5 ("push tier property to CRM") that was missing, and it's the moment the product becomes visible inside the customer's CRM — the core value loop closes in Phase 1 instead of waiting for the full Phase 3 write-back (signals/awareness).
+
+**Rejected:**
+- **Separate `CRM_WRITEBACK` queue now** — right shape for Phase 3 volume, premature for ~hundreds of PATCHes already rate-limited by the HTTP client; sync-job-inline keeps one progress bar.
+- **Skipping null tiers** — leaves stale tiers in the CRM after rubric changes.
+
+---
+
+## ADR-020: Signal weights, time-decay, and awareness thresholds are explicit named constants
+**Date:** 2026-06-11 · **Status:** Accepted
+
+**Decision:** The Signal Scorer's math lives as explicit, named constants in code — not per-org config and not learned: party base weights first=10 / second=3 / third=1, multiplied by a per-type multiplier (demo_booked 6, demo_request 5, email_reply 4, pricing_page_visit 3, email_open 0.5, …); exponential time-decay with a 14-day half-life; signals older than 90 days ignored entirely. Awareness stages use explicit thresholds (selecting: demo signal ≤30d or score ≥60; considering: pricing visit ≤30d or score ≥30; engaged: any 1st-party signal ≤30d or score ≥15; aware: any signal ≤90d; else identified). The full constant set is exposed read-only via GET /api/signals/config so the UI can always explain a score.
+
+**Why:** ADR-009 mandates weighting + decay; making the numbers named and inspectable keeps every score reproducible and explainable — the prerequisite for the ADR-011 validation gate, where exactly these defaults get tuned against real closed-won outcomes. A score nobody can explain is a score nobody will trust or act on.
+
+**Rejected:**
+- **Per-org configurable weights in v1** — tune the defaults against validation data first; per-org knobs before validation just multiply the noise.
+- **ML-learned weights** — blocked by the ADR-013 guardrail until rules-based scoring is proven insufficient.
+
+---
+
+## ADR-021: Orchestrator ships code-complete but fires nothing by default
+**Date:** 2026-06-11 · **Status:** Accepted
+
+**Decision:** Phase 3 orchestrator code (rules engine, Slack / CRM-task / email-sequence actions, CRUD at /api/rules) ships fully built, but inert: zero rules are seeded, new rules default to `enabled: false`, every rule×account pair has a 24h cooldown, and every fired action is recorded in the `action_log` audit table. Enabling the first rule is an explicit human act, gated on the ADR-011 awareness-score validation passing.
+
+**Why:** The validation gate is non-negotiable — an unvalidated score must not trigger outreach at customers' accounts. But the engine has to exist and be exercisable end-to-end to be tested at all. Per-rule opt-in makes the go-live moment deliberate, reviewable, and auditable, rather than an accident of deployment.
+
+**Rejected:**
+- **Global ORCHESTRATOR_ENABLED env flag** — too blunt; per-rule opt-in is auditable and lets activation roll out one rule at a time.
+- **Blocking Phase 3 code entirely until the gate passes** — the engine must be testable end-to-end before the gate passes; what is gated is firing, not building.
+
+---
+
+## ADR-022: Paid integrations are key-gated, never faked
+**Date:** 2026-06-11 · **Status:** Accepted
+
+**Decision:** Every integration that costs money or needs external approval activates only when its credential is present, and is honest about its state otherwise: Apollo enrichment + TAM search activate via `APOLLO_API_KEY` (without it: deterministic mock enrichment, and TAM returns a clear 503 with activation instructions); LinkedIn Ads = Tier 1+2 CSV audience export until Marketing-API partner approval is granted; outreach sequences = a logged stub action until Smartlead vs Instantly is decided; SalesforceAdapter = env-credentialed (`SALESFORCE_INSTANCE_URL`/`SALESFORCE_ACCESS_TOKEN`) and marked untested until a free Developer Edition org verifies it.
+
+**Why:** ADR-014 forbids paid line items pre-validation, but the code paths still need to exist and be exercisable. Key-gating gives a single observable switch from mock/manual to live with zero code changes, and the failure modes (503, setup instructions) tell the operator exactly what is missing instead of pretending.
+
+**Rejected:**
+- **Paying for providers pre-validation** — violates ADR-014.
+- **Mocking writes to external ad/outreach platforms** — silent no-ops that look live would be worse than honest gates.
+
+---
+
 ## Open decisions (to revisit)
 
 - **Enrichment provider specifics:** Apollo vs Clearbit vs People Data Labs — defer until post-validation (see ADR-014); verify live pricing/API access before committing.
