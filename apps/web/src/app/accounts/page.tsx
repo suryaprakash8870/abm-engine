@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useSyncFromHubspot } from '@/lib/use-sync-from-hubspot';
@@ -58,6 +59,7 @@ function TierBadge({ tier }: { tier: Account['tier'] }) {
 export default function AccountsPage() {
   const accounts = useAccounts();
   const sync = useSyncFromHubspot();
+  const router = useRouter();
   const [search, setSearch] = useState('');
 
   const rows = accounts.data?.accounts ?? [];
@@ -145,7 +147,11 @@ export default function AccountsPage() {
               </tr>
             )}
             {filtered.map((a) => (
-              <tr key={a.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900">
+              <tr
+                key={a.id}
+                onClick={() => router.push(`/accounts/${a.id}`)}
+                className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-900"
+              >
                 <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold tabular-nums">
                   {a.fitScore === null ? <span className="text-neutral-500">—</span> : a.fitScore}
                 </td>

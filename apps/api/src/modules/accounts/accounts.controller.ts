@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { AccountsService } from './accounts.service';
 
 @Controller('accounts')
@@ -23,5 +23,18 @@ export class AccountsController {
   @Get('summary')
   async summary() {
     return this.accounts.summaryForCurrentOrg();
+  }
+
+  /**
+   * Account detail with full score breakdown. Powers /accounts/[id].
+   * The breakdown is recomputed on every request — cheap (deterministic
+   * arithmetic) and guarantees it always matches the current rubric.
+   *
+   * Route order matters in Nest's path matcher: this MUST come after
+   * 'summary' so /api/accounts/summary doesn't fall into this handler.
+   */
+  @Get(':id')
+  async byId(@Param('id') id: string) {
+    return this.accounts.getOneForCurrentOrg(id);
   }
 }
