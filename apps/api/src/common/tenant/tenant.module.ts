@@ -9,7 +9,7 @@ export class TenantModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(TenantMiddleware)
-      .exclude('health', 'health/(.*)', 'dev/(.*)')
+      .exclude('health', 'health/(.*)', 'dev/(.*)', 'icp/(.*)')
       .forRoutes('*');
   }
 }

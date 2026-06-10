@@ -104,8 +104,8 @@ export default function IcpLabPage() {
       form.append('won', wonFile);
       form.append('prospects', prospectFile);
 
-      // apiFetch sends JSON — use raw fetch for multipart
-      const res = await fetch('/api/icp/analyze-and-score', { method: 'POST', body: form });
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
+      const res = await fetch(`${API_BASE}/api/icp/analyze-and-score`, { method: 'POST', body: form });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: res.statusText }));
         throw new Error((err as { message?: string }).message ?? res.statusText);
