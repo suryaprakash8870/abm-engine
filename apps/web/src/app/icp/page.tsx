@@ -3,6 +3,35 @@
 import { useState, useRef } from 'react';
 import { apiFetch } from '@/lib/api-client';
 
+function exportToCsv(prospects: ScoredProspect[]) {
+  const headers = ['company', 'domain', 'fit_score', 'tier', 'industry', 'employees', 'country', ...
+    (prospects[0]?.breakdown.map((b) => `points_${b.field}`) ?? []),
+  ];
+
+  const rows = prospects.map((p) => [
+    p.name,
+    p.domain,
+    p.fitScore,
+    p.tier ?? 'Drop',
+    p.industry ?? '',
+    p.employees ?? '',
+    p.country ?? '',
+    ...p.breakdown.map((b) => b.points),
+  ]);
+
+  const csv = [headers, ...rows]
+    .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `icp-scored-prospects-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Types (mirror the backend) ─────────────────────────────────────────────
 
 type FreqEntry = { value: string; count: number; pct: number };
@@ -260,12 +289,20 @@ export default function IcpLabPage() {
               <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-500">Step 3 — Prospects scored</h2>
               <p className="mt-1 text-xs text-neutral-400">{prospects.length} prospects ranked by ICP fit. Click any row to see the breakdown.</p>
             </div>
+            <div className="flex items-center gap-4">
             <div className="flex gap-3 text-sm">
               <span className="font-semibold text-emerald-600 dark:text-emerald-400">{tierCount(1)} T1</span>
               <span className="font-semibold text-amber-600 dark:text-amber-400">{tierCount(2)} T2</span>
               <span className="font-semibold text-neutral-500">{tierCount(3)} T3</span>
               <span className="font-semibold text-red-500">{tierCount(null)} Drop</span>
             </div>
+            <button
+              onClick={() => exportToCsv(prospects)}
+              className="flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+            >
+              ↓ Export CSV
+            </button>
+          </div>
           </div>
 
           <div className="overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800">
