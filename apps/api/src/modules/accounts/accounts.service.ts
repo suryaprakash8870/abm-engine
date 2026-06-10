@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq } from 'drizzle-orm';
-import { accounts, createDb } from '@abm/db';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { accounts, createDb, scores } from '@abm/db';
 import { DB_TOKEN } from '../../common/db/db.module';
 import { getCurrentTenant } from '../../common/tenant/tenant-context';
 
@@ -11,6 +11,9 @@ type DbHandle = ReturnType<typeof createDb>;
  * even though Drizzle's superuser connection bypasses RLS — defense in depth.
  * When we swap to the `abm_app` role for runtime, the RLS policies will catch
  * any missed filter as a backstop.
+ *
+ * Default sort: tier ASC NULLS LAST, then fit_score DESC. Per UI_FLOW's
+ * "lead with the action" principle — T1 accounts surface first.
  */
 @Injectable()
 export class AccountsService {
@@ -31,10 +34,21 @@ export class AccountsService {
         enrichedAt: accounts.enrichedAt,
         createdAt: accounts.createdAt,
         updatedAt: accounts.updatedAt,
+        fitScore: scores.fitScore,
+        tier: scores.tier,
+        scoreComputedAt: scores.computedAt,
       })
       .from(accounts)
+      .leftJoin(
+        scores,
+        and(eq(scores.accountId, accounts.id), eq(scores.orgId, accounts.orgId)),
+      )
       .where(eq(accounts.orgId, orgId))
-      .orderBy(asc(accounts.domain))
+      .orderBy(
+        sql`${scores.tier} asc nulls last`,
+        desc(scores.fitScore),
+        asc(accounts.domain),
+      )
       .limit(limit);
 
     return rows.map((r) => ({
@@ -43,16 +57,62 @@ export class AccountsService {
       name: r.name,
       externalCrmId: r.externalCrmId,
       externalCrmProvider: r.externalCrmProvider,
-      // Surface the most common firmographic properties from the enrichment bag
-      // so the dashboard doesn't have to know about CRM-specific shapes.
       industry: pickProp(r.enrichment, 'industry'),
       employees: pickProp(r.enrichment, 'numberofemployees'),
       country: pickProp(r.enrichment, 'country'),
       website: pickProp(r.enrichment, 'website'),
+      fitScore: r.fitScore,
+      tier: r.tier,
+      scoreComputedAt: r.scoreComputedAt,
       enrichedAt: r.enrichedAt,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     }));
+  }
+
+  /**
+   * Aggregate stats for the landing page: total accounts, tier breakdown,
+   * last scoring run, average fit score. One query, no row data — cheap.
+   */
+  async summaryForCurrentOrg(): Promise<{
+    total: number;
+    tierCounts: { tier1: number; tier2: number; tier3: number; unscored: number };
+    lastScoredAt: string | null;
+    avgFitScore: number | null;
+  }> {
+    const { orgId } = getCurrentTenant();
+
+    const [row] = await this.dbHandle.db
+      .select({
+        total: sql<number>`count(${accounts.id})::int`,
+        tier1: sql<number>`count(${scores.tier}) filter (where ${scores.tier} = 1)::int`,
+        tier2: sql<number>`count(${scores.tier}) filter (where ${scores.tier} = 2)::int`,
+        tier3: sql<number>`count(${scores.tier}) filter (where ${scores.tier} = 3)::int`,
+        unscored: sql<number>`count(${accounts.id}) filter (where ${scores.fitScore} is null)::int`,
+        lastScoredAt: sql<string | null>`max(${scores.computedAt})::text`,
+        avgFitScore: sql<number | null>`avg(${scores.fitScore})::float`,
+      })
+      .from(accounts)
+      .leftJoin(
+        scores,
+        and(eq(scores.accountId, accounts.id), eq(scores.orgId, accounts.orgId)),
+      )
+      .where(eq(accounts.orgId, orgId));
+
+    return {
+      total: row?.total ?? 0,
+      tierCounts: {
+        tier1: row?.tier1 ?? 0,
+        tier2: row?.tier2 ?? 0,
+        tier3: row?.tier3 ?? 0,
+        unscored: row?.unscored ?? 0,
+      },
+      lastScoredAt: row?.lastScoredAt ?? null,
+      avgFitScore:
+        row?.avgFitScore !== undefined && row?.avgFitScore !== null
+          ? Math.round(row.avgFitScore)
+          : null,
+    };
   }
 }
 

@@ -16,3 +16,8 @@ import { ScoringService } from './scoring.service';
   exports: [ScoringService],
 })
 export class ScoringModule {}
+
+// Re-export for convenience — other modules (CrmSyncService, future API routes)
+// pull from the module barrel.
+export { ScoringService } from './scoring.service';
+export type { ScoringResult, Breakdown, RubricV1 } from './scoring.service';

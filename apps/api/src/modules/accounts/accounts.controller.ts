@@ -18,4 +18,10 @@ export class AccountsController {
     });
     return { count: rows.length, accounts: rows };
   }
+
+  /** Lightweight aggregate stats for the landing page. */
+  @Get('summary')
+  async summary() {
+    return this.accounts.summaryForCurrentOrg();
+  }
 }

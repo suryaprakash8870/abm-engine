@@ -266,6 +266,74 @@ flowchart TD
 > 5. **Build UI against mocked data first** (the parallel-work trick) — frontend doesn't wait for the engine, only for the agreed data shape.
 > 6. **Admin vs user split.** ICP config, rules, validation charts = admin screens. Accounts, signals, tasks = daily-user screens.
 > 7. **Don't build the dashboard before the engine works** (ADR-011) — a pretty dashboard on an unvalidated score is a demo, not a product.
+> 8. **Never leave the user wondering "is this working?"** Any action that takes longer than ~1 second shows progress — see §Progress UX below.
+
+---
+
+## ⏱️ Progress UX (long-running jobs)
+
+> [!info] The principle
+> Engine jobs (sync, enrichment, scoring, ML inference) take seconds to minutes. The customer should always be able to tell *what is happening* and *how far through* — but without seeing the engine's plumbing.
+
+### What the customer reads vs. what's actually happening
+
+| Phase of the job (internal) | What the customer sees |
+|---|---|
+| BullMQ `crm-sync` job enqueued | "Starting sync…" |
+| `HubspotAdapter.getAccounts()` paging | "Importing accounts — 240 of 1,200" |
+| Drizzle `onConflictDoUpdate` upserting | (still part of "Importing…" — they don't care that there's a DB write) |
+| `ScoringService.scoreAccountsForOrg()` looping | "Scoring accounts — 12 of 28" |
+| Job state → `completed` | "Sync complete — scores recomputed." |
+| Job state → `failed` | "Sync failed: <one-line plain reason>" (never a stack trace) |
+
+**Rule:** the label is a sentence the customer might say, not a job/queue/method name. "Importing" not "upserting". "Scoring" not "applying rubric".
+
+### Shape of the progress payload
+
+Every long job emits one structured progress object whenever it advances. The shape (consistent across jobs):
+
+```ts
+{
+  step:    'fetching' | 'upserting' | 'scoring' | 'done'   // internal — picks the message bucket
+  current: number    // e.g. 12
+  total:   number    // e.g. 28
+  percent: number    // 0–100, smooth across the WHOLE job, not per step
+  message: string    // human sentence — what the bar caption reads
+}
+```
+
+**Single percent bar covering the whole job, not per-step.** Resetting the bar at each step makes users think the job restarted. Allocate fixed budgets per step (e.g. fetch+upsert = first 30%, scoring = remaining 70%) so it makes one smooth pass.
+
+### How it surfaces in the UI
+
+```mermaid
+flowchart LR
+    Click["User clicks Sync"] --> Enq["Enqueue job"]
+    Enq --> Poll["Poll job status<br/>every ~800ms"]
+    Poll --> Bar["Bar fills 0→100%<br/>+ live caption"]
+    Bar -->|completed| Done["✓ Sync complete · scores recomputed"]
+    Bar -->|failed| Err["✗ &lt;one-line plain reason&gt;"]
+```
+
+A progress bar **always pairs** with a caption — never just a bar, never just text. The bar quantifies, the caption explains.
+
+### What NEVER appears in progress UI
+
+- Stack traces, code paths, file/module names
+- BullMQ job IDs, queue names ("crm-sync", "score-accounts")
+- "Polling" / "Waiting on Redis" / "Acquiring lock"
+- Raw HubSpot status codes ("429 throttled — retrying in 6s") — instead: "HubSpot is rate-limiting us — retrying"
+
+### Where this is already wired (Phase 1)
+
+- `CrmSyncService.syncAccountsForOrg(orgId, provider, onProgress?)` accepts an optional callback
+- `ScoringService.scoreAccountsForOrg(orgId, onProgress?)` emits row-by-row sub-progress
+- `CrmSyncProcessor` forwards both into BullMQ `job.updateProgress({step, current, total, percent, message})`
+- `GET /api/dev/sync/jobs/:id` returns `progress` in its payload
+- `useSyncFromHubspot()` hook polls every 800ms and exposes the latest progress to React
+- `<SyncProgressBar />` component renders the bar + caption — used on `/` (landing) and `/accounts`
+
+When a new long-running job lands (e.g. enrichment via Apollo, ML scoring), copy this contract — same shape, same bar, same caption rules.
 
 ---
 

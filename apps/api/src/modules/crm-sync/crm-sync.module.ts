@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CrmAdapterModule } from '../crm-adapter/crm-adapter.module';
+import { ScoringModule } from '../scoring/scoring.module';
 import { CrmSyncProcessor } from './crm-sync.processor';
 import { CrmSyncService } from './crm-sync.service';
 
@@ -11,7 +12,7 @@ import { CrmSyncService } from './crm-sync.service';
  * consumes them.
  */
 @Module({
-  imports: [CrmAdapterModule],
+  imports: [CrmAdapterModule, ScoringModule],
   providers: [CrmSyncService, CrmSyncProcessor],
   exports: [CrmSyncService],
 })

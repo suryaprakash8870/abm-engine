@@ -26,7 +26,13 @@ export class CrmSyncProcessor extends WorkerHost {
     }
     const { orgId, provider } = job.data;
     this.logger.log(`[${job.id}] starting sync org=${orgId} provider=${provider}`);
-    const result = await this.sync.syncAccountsForOrg(orgId, provider);
+
+    // Forward structured progress to BullMQ — the dev job-status endpoint
+    // reads job.progress and the dashboard renders it as a progress bar.
+    const result = await this.sync.syncAccountsForOrg(orgId, provider, async (p) => {
+      await job.updateProgress(p as unknown as Record<string, unknown>);
+    });
+
     this.logger.log(`[${job.id}] done: ${JSON.stringify(result)}`);
     return result;
   }
