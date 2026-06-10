@@ -1,0 +1,23 @@
+company_name,domain,industry,employees,country,annual_revenue,technology,status
+Linear,linear.app,COMPUTER_SOFTWARE,150,United States,12000000,hubspot,closed_won
+Retool,retool.com,COMPUTER_SOFTWARE,400,United States,45000000,salesforce,closed_won
+PostHog,posthog.com,COMPUTER_SOFTWARE,80,United States,8000000,hubspot,closed_won
+dbt Labs,dbt.io,COMPUTER_SOFTWARE,300,United States,30000000,salesforce,closed_won
+Mercury,mercury.com,COMPUTER_SOFTWARE,200,United States,20000000,hubspot,closed_won
+Gitpod,gitpod.io,COMPUTER_SOFTWARE,90,United States,5000000,hubspot,closed_won
+Zeet,zeet.co,COMPUTER_SOFTWARE,120,United States,7000000,hubspot,closed_won
+incident.io,incident.io,COMPUTER_SOFTWARE,60,United Kingdom,4000000,hubspot,closed_won
+Coda,coda.io,INTERNET,250,United States,18000000,salesforce,closed_won
+Craft,craft.do,INTERNET,70,United Kingdom,3000000,hubspot,closed_won
+Loom,loom.com,INTERNET,300,United States,25000000,salesforce,closed_won
+Hotjar,hotjar.com,INTERNET,200,United Kingdom,15000000,hubspot,closed_won
+Mixpanel,mixpanel.com,INTERNET,350,United States,35000000,salesforce,closed_won
+Typeform,typeform.com,INTERNET,450,United Kingdom,28000000,hubspot,closed_won
+Miro,miro.com,COMPUTER_SOFTWARE,1800,United States,180000000,salesforce,closed_won
+Figma,figma.com,COMPUTER_SOFTWARE,1200,United States,150000000,salesforce,closed_won
+Shopify,shopify.com,RETAIL,12000,Canada,2000000000,salesforce,lost
+Deloitte,deloitte.com,ACCOUNTING,350000,United States,50000000000,salesforce,lost
+Ford,ford.com,AUTOMOTIVE,180000,United States,180000000000,salesforce,lost
+Pfizer,pfizer.com,PHARMACEUTICALS,80000,United States,100000000000,salesforce,lost
+Etsy,etsy.com,RETAIL,3000,United States,600000000,salesforce,lost
+GoDaddy,godaddy.com,RETAIL,8000,United States,4000000000,salesforce,lost

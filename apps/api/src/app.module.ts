@@ -15,6 +15,7 @@ import { AccountsModule } from './modules/accounts/accounts.module';
 import { CrmAdapterModule } from './modules/crm-adapter/crm-adapter.module';
 import { CrmSyncModule } from './modules/crm-sync/crm-sync.module';
 import { DevModule } from './modules/dev/dev.module';
+import { IcpAnalyzerModule } from './modules/icp-analyzer/icp-analyzer.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { DevModule } from './modules/dev/dev.module';
     CrmAdapterModule,
     CrmSyncModule,
     DevModule,
+    IcpAnalyzerModule,
   ],
 })
 export class AppModule {}

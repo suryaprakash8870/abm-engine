@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 const NAV_LINKS = [
   { href: '/', label: 'Dashboard' },
   { href: '/accounts', label: 'Accounts' },
+  { href: '/icp', label: 'ICP Lab' },
 ];
 
 export function TopNav() {
@@ -107,6 +108,8 @@ function buildCrumbs(pathname: string): Crumb[] {
     accumulated += '/' + part;
     if (part === 'accounts') {
       crumbs.push({ href: '/accounts', label: 'Accounts' });
+    } else if (part === 'icp') {
+      crumbs.push({ href: '/icp', label: 'ICP Lab' });
     } else {
       // Dynamic segment (account ID) — show a short label
       crumbs.push({ href: accumulated, label: shortId(part) });
