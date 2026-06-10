@@ -1,0 +1,41 @@
+{
+  "name": "@abm/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ABM Engine — NestJS backend (the 5-component engine + workers).",
+  "scripts": {
+    "prebuild": "npm --prefix ../../packages/shared run build && npm --prefix ../../packages/db run build",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "prestart:dev": "npm --prefix ../../packages/shared run build && npm --prefix ../../packages/db run build",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"{src,test}/**/*.ts\""
+  },
+  "dependencies": {
+    "@abm/db": "*",
+    "@abm/shared": "*",
+    "@nestjs/bullmq": "^10.2.3",
+    "@nestjs/common": "^10.4.7",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/core": "^10.4.7",
+    "@nestjs/platform-express": "^10.4.7",
+    "bullmq": "^5.21.2",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "ioredis": "^5.4.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.8",
+    "@nestjs/schematics": "^10.2.3",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.17.0",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.6.3"
+  }
+}
