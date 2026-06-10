@@ -8,8 +8,12 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { CrmAdapterFactory } from '../crm-adapter/crm-adapter.factory';
 import { HubspotHttpError } from '../crm-adapter/hubspot/hubspot-http-client';
+import { QUEUES } from '../../common/queue/queue.constants';
+import { JOB_SYNC_ACCOUNTS } from '../crm-sync/crm-sync.processor';
 
 /**
  * Dev-only smoke endpoints. NOT for production — these bypass tenant auth and
@@ -18,14 +22,15 @@ import { HubspotHttpError } from '../crm-adapter/hubspot/hubspot-http-client';
  *
  * Purpose: prove the HubspotAdapter actually talks to HubSpot end-to-end.
  */
-@Controller('dev/hubspot')
+@Controller('dev')
 export class DevController {
   constructor(
     private readonly crm: CrmAdapterFactory,
     private readonly config: ConfigService,
+    @InjectQueue(QUEUES.CRM_SYNC) private readonly crmSyncQueue: Queue,
   ) {}
 
-  @Get('accounts')
+  @Get('hubspot/accounts')
   async accounts(@Query('limit') limit?: string, @Query('cursor') cursor?: string) {
     this.ensureConfigured();
     return this.wrap(() =>
@@ -36,7 +41,7 @@ export class DevController {
     );
   }
 
-  @Get('accounts/:id/contacts')
+  @Get('hubspot/accounts/:id/contacts')
   async contacts(
     @Param('id') accountId: string,
     @Query('limit') limit?: string,
@@ -52,7 +57,7 @@ export class DevController {
     );
   }
 
-  @Post('accounts/upsert')
+  @Post('hubspot/accounts/upsert')
   async upsertAccount(
     @Body() body: { domain: string; properties: Record<string, unknown> },
   ) {
@@ -65,7 +70,7 @@ export class DevController {
     );
   }
 
-  @Post('contacts/upsert')
+  @Post('hubspot/contacts/upsert')
   async upsertContact(
     @Body()
     body: {
@@ -84,7 +89,7 @@ export class DevController {
     );
   }
 
-  @Post('tasks')
+  @Post('hubspot/tasks')
   async createTask(
     @Body()
     body: {
@@ -105,6 +110,38 @@ export class DevController {
         associatedContactExternalId: body.associatedContactExternalId,
       }),
     );
+  }
+
+  /** Enqueue a sync job to pull all HubSpot companies into our accounts table. */
+  @Post('sync/accounts')
+  async syncAccounts(@Body() body: { orgId: string }) {
+    this.ensureConfigured();
+    if (!body?.orgId) {
+      throw new ServiceUnavailableException('orgId required in body');
+    }
+    const job = await this.crmSyncQueue.add(
+      JOB_SYNC_ACCOUNTS,
+      { orgId: body.orgId, provider: 'hubspot' },
+      { jobId: `sync:hubspot:${body.orgId}` }, // dedupe — only one active sync per org
+    );
+    return { jobId: job.id, queue: this.crmSyncQueue.name };
+  }
+
+  /** Poll a sync job. Useful for the smoke test after enqueueing. */
+  @Get('sync/jobs/:id')
+  async jobStatus(@Param('id') id: string) {
+    const job = await this.crmSyncQueue.getJob(id);
+    if (!job) return { status: 'not_found' };
+    const state = await job.getState();
+    return {
+      id: job.id,
+      name: job.name,
+      state,
+      progress: job.progress,
+      returnvalue: job.returnvalue,
+      failedReason: job.failedReason,
+      attemptsMade: job.attemptsMade,
+    };
   }
 
   private ensureConfigured() {

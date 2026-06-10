@@ -19,6 +19,11 @@
 
 ## 🟦 Phase 1 — Prove the Core (MVP, sellable on its own)
 
+### CRM → DB sync (the bridge between adapter and engine)
+- [x] BullMQ `crm-sync` queue + `sync-accounts-from-crm` job — *idempotent, deduped per org via jobId*
+- [x] Worker upserts into `accounts` (matches on `org_id` + `domain`, preserves existing fields) — *3 HubSpot test companies persisted, re-sync verified non-duplicating*
+- [ ] Scheduled / recurring sync (BullMQ repeatable job, e.g. every 15 min) — *Phase 1 polish*
+
 ### CRM Adapter (build first — everything plugs in)
 - [x] Define `CrmAdapter` interface (getAccounts, getContacts, upsertAccount, upsertContact, createTask) — *in `@abm/shared`*
 - [x] Implement `HubspotAdapter` — *5/5 methods verified against live test portal*

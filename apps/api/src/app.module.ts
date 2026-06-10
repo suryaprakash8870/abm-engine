@@ -12,6 +12,7 @@ import { ScoringModule } from './modules/scoring/scoring.module';
 import { SignalScorerModule } from './modules/signal-scorer/signal-scorer.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { CrmAdapterModule } from './modules/crm-adapter/crm-adapter.module';
+import { CrmSyncModule } from './modules/crm-sync/crm-sync.module';
 import { DevModule } from './modules/dev/dev.module';
 
 @Module({
@@ -35,6 +36,7 @@ import { DevModule } from './modules/dev/dev.module';
     SignalScorerModule,
     OrchestratorModule,
     CrmAdapterModule,
+    CrmSyncModule,
     DevModule,
   ],
 })
