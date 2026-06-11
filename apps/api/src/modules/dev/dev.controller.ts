@@ -134,10 +134,20 @@ export class DevController {
     if (!body?.orgId) {
       throw new ServiceUnavailableException('orgId required in body');
     }
+    // Dedupe: one sync per org. A finished (completed/failed) job parked on
+    // this ID would silently block re-enqueue — clear it first.
+    const jobId = `sync-hubspot-${body.orgId}`; // no ':' — BullMQ forbids it
+    const existing = await this.crmSyncQueue.getJob(jobId);
+    if (existing) {
+      const state = await existing.getState();
+      if (state === 'completed' || state === 'failed') {
+        await existing.remove();
+      }
+    }
     const job = await this.crmSyncQueue.add(
       JOB_SYNC_ACCOUNTS,
       { orgId: body.orgId, provider: 'hubspot' },
-      { jobId: `sync-hubspot-${body.orgId}` }, // dedupe — only one active sync per org (no ':' — BullMQ forbids it)
+      { jobId },
     );
     return { jobId: job.id, queue: this.crmSyncQueue.name };
   }

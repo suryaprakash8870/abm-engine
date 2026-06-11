@@ -231,7 +231,21 @@ export class CrmSyncService {
 
     if (rows.length === 0) return { writtenBack: 0, writeBackFailed: 0 };
 
-    await adapter.ensureCustomProperties([...SCORE_PROPERTY_DEFS]);
+    // Write-back is enrichment, not a transaction — if we can't even create
+    // our abm_* property definitions (typically a missing scope on the
+    // HubSpot key), skip write-back for this run instead of failing the
+    // whole sync. Accounts, scores, and enrichment still land.
+    try {
+      await adapter.ensureCustomProperties([...SCORE_PROPERTY_DEFS]);
+    } catch (err) {
+      this.logger.warn(
+        `Skipping CRM write-back this run — cannot ensure abm_* properties on ${provider}: ${(err as Error).message}` +
+          (provider === 'hubspot'
+            ? ' → grant the Service Key the "crm.schemas.companies.write" scope (HubSpot → Settings → Integrations → Private Apps → Scopes), then re-sync.'
+            : ''),
+      );
+      return { writtenBack: 0, writeBackFailed: rows.length };
+    }
 
     let writtenBack = 0;
     let writeBackFailed = 0;
@@ -301,6 +315,9 @@ export class CrmSyncService {
     let skippedNoEmail = 0;
     let roleWriteBackFailed = 0;
     let rolePropertyEnsured = false;
+    // One ensure failure (e.g. missing schema scope) disables role write-back
+    // for the rest of the run — avoids one warning per contact.
+    let roleWriteBackDisabled = false;
 
     for (const account of orgAccounts) {
       let cursor: string | undefined;
@@ -350,20 +367,32 @@ export class CrmSyncService {
 
           // Role write-back (Playbook Step 7: "upload to CRM with custom
           // properties … stakeholder role"). Only our abm_role field.
-          try {
-            if (!rolePropertyEnsured) {
-              await adapter.ensureCustomProperties([...CONTACT_PROPERTY_DEFS]);
-              rolePropertyEnsured = true;
+          if (!roleWriteBackDisabled) {
+            try {
+              if (!rolePropertyEnsured) {
+                await adapter.ensureCustomProperties([...CONTACT_PROPERTY_DEFS]);
+                rolePropertyEnsured = true;
+              }
+              await adapter.upsertContact({
+                matchKey: { externalId: c.externalId },
+                properties: { abm_role: role },
+              });
+            } catch (err) {
+              roleWriteBackFailed += 1;
+              if (!rolePropertyEnsured) {
+                roleWriteBackDisabled = true;
+                this.logger.warn(
+                  `Disabling abm_role write-back this run — cannot ensure the property: ${(err as Error).message}` +
+                    (provider === 'hubspot'
+                      ? ' → grant the Service Key the "crm.schemas.contacts.write" scope, then re-sync.'
+                      : ''),
+                );
+              } else {
+                this.logger.warn(
+                  `abm_role write-back failed for ${c.email}: ${(err as Error).message}`,
+                );
+              }
             }
-            await adapter.upsertContact({
-              matchKey: { externalId: c.externalId },
-              properties: { abm_role: role },
-            });
-          } catch (err) {
-            roleWriteBackFailed += 1;
-            this.logger.warn(
-              `abm_role write-back failed for ${c.email}: ${(err as Error).message}`,
-            );
           }
         }
         cursor = page.nextCursor;
