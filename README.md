@@ -1,49 +1,88 @@
 # ABM Engine
 
-CRM-agnostic ABM intelligence layer. See [`CLAUDE.md`](CLAUDE.md) for the project brief, [`DECISIONS.md`](DECISIONS.md) for the ADR, and [`TODO.md`](TODO.md) for the phased roadmap.
+> End-to-end Account-Based Marketing platform built as 11 independent engines connected by an event bus.
 
-## Monorepo layout
+## Start here
+
+| If you want to... | Read |
+|---|---|
+| Understand the whole system | `docs/project/architecture.md` |
+| Know what to build and in what order | `docs/project/plan.md` |
+| Pick up a task | `docs/project/todo.md` |
+| Understand a specific engine | `docs/engines/engine-NN-*.md` |
+| Set up your environment | `docs/project/environment.md` |
+| Follow coding conventions | `docs/project/conventions.md` |
+| Understand a term | `docs/project/glossary.md` |
+| See past decisions | `docs/project/decisions.md` |
+
+Claude Code reads `CLAUDE.md` automatically — that is the primary context file.
+
+## The 11 engines
 
 ```
-apps/
-  web/        Next.js (App Router) — dashboard, auth, marketing
-  api/        NestJS — the 5-component engine + workers
-packages/
-  db/         Drizzle schema + migrations (multi-tenant via org_id + RLS)
-  shared/     TypeScript types shared between FE and BE
+01 ICP Engine          → Build the Ideal Customer Profile
+02 TAM Builder         → Source all matching companies
+03 Enrichment Engine   → Enrich + AI-qualify accounts
+04 Scoring Engine      → Score + tier accounts
+05 TAL Manager         → Build/maintain target account list
+06 Contact Engine      → Source + map buying committees
+07 Signal Engine       → Track buying signals (always-on)
+08 Awareness Engine    → Score awareness + route accounts
+09 Orchestrator        → Execute the right play
+10 CRM Sync Engine     → Write all data back to CRM
+11 GTM Flywheel        → Attribution + ICP feedback loop
 ```
 
-## Phase 0 — local dev quick start
+Data flows forward through the pipeline. Feedback flows back, making it a learning flywheel.
 
-Prerequisites: Node 20+, Docker Desktop.
+## Tech stack
+
+TypeScript · Next.js 14 · Supabase (Postgres + Auth) · Prisma · BullMQ on Upstash Redis · Anthropic Claude API (Sonnet + Haiku) · Vercel · Stripe · Resend · PostHog · Sentry
+
+## Quick start
 
 ```bash
-# 1. install deps (uses npm workspaces)
 npm install
-
-# 2. start Postgres + Redis locally
-npm run infra:up
-
-# 3. copy env template
-cp .env.example .env   # then fill SECRETS_ENCRYPTION_KEY at minimum
-
-# 4. apply initial schema
-npm run db:migrate
-
-# 5. run the API and the web app (separate terminals)
-npm run dev:api
-npm run dev:web
+cp .env.example .env.local   # fill in — see docs/project/environment.md
+npx prisma migrate dev
+npm run dev                  # terminal 1
+npm run worker               # terminal 2
 ```
 
-API listens on `http://localhost:4000`. Web app on `http://localhost:3000`.
+## The rules that matter most
 
-## Hard rules (from CLAUDE.md)
+1. No engine queries another engine's database. Subscribe to events, keep local copies.
+2. Engines communicate only through events, never direct API calls.
+3. Every table has `workspace_id` + an RLS policy.
+4. Verify the task completion check before publishing a success event.
+5. Never block the user on AI latency — queue it.
+6. All CRM writes go through Engine 10.
+7. Haiku for batch, Sonnet for reasoning.
 
-1. Never build a CRM. Integrate.
-2. Never enrich/score inside a web request — always queue (BullMQ).
-3. CRM logic only behind the `CrmAdapter` interface.
-4. Signals are weighted + time-decayed (1st-party ≫ 3rd-party).
-5. Multi-tenancy from day one (`org_id` + RLS).
-6. CRM tokens encrypted at rest.
-7. CRM write-back is upsert, never overwrite.
-8. Don't build the dashboard before the engine works.
+See `CLAUDE.md` for the full set.
+
+## Repository layout
+
+```
+app/            Next.js pages + API routes (api/v1/)
+components/     UI components (ui/ = shadcn, abm/ = app-specific)
+lib/
+  engines/      core logic, one folder per engine
+  events/       event bus publish/subscribe
+  clients/      external API clients
+  db/           Prisma client
+workers/        BullMQ workers
+prisma/         schema + migrations
+public/         tracker.js (website snippet)
+docs/
+  engines/      spec per engine
+  project/      architecture, plan, todo, decisions, etc.
+```
+
+## Build order
+
+Follow `docs/project/plan.md`. Build engines in dependency order (01 → 11). Engines 01–05 form a complete sellable product on their own. Engines 06–11 layer intelligence and automation on top.
+
+## License
+
+Proprietary. All rights reserved.

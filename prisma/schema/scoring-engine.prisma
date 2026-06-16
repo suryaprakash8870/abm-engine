@@ -1,0 +1,70 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine 04 — Scoring Engine — owned by <unassigned>
+//
+// Tables this engine owns (no other engine queries them directly — they listen
+// to this engine's events and keep local copies). The stubs below are
+// COMMENTED-OUT so this file is valid-but-empty until the owner fills them in.
+//
+// TODO(owner): define models + add workspaceId + RLS (Supabase policy per table).
+//
+// CLAUDE.md rule: every table is tagged workspaceId and isolated by Postgres RLS.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// model ScoringFormula {
+//   id             String   @id @default(cuid())
+//   workspaceId    String   @map("workspace_id")
+//   icpId          String   @map("icp_id")
+//   version        Int
+//   criteria       Json     // weighted criteria + per-criterion rationale (transparent, editable)
+//   tierBoundaries Json     @map("tier_boundaries") // default Tier1 70-100 / Tier2 40-69 / Tier3 10-39
+//   createdBy      String   @map("created_by")
+//   createdAt      DateTime @default(now()) @map("created_at")
+//
+//   @@map("scoring_formulas")
+// }
+
+// model ScoringFormulaVersion {
+//   id            String @id @default(cuid())
+//   workspaceId   String @map("workspace_id")
+//   formulaId     String @map("formula_id")
+//   versionNumber Int    @map("version_number")
+//   snapshot      Json
+//
+//   @@map("scoring_formula_versions")
+// }
+
+// model AccountScore {
+//   id             String   @id @default(cuid())
+//   workspaceId    String   @map("workspace_id")
+//   accountId      String   @map("account_id")
+//   formulaVersion Int      @map("formula_version")
+//   totalScore     Float    @map("total_score") // 0-100
+//   tier           Int                          // 1 | 2 | 3
+//   criterionScores Json    @map("criterion_scores") // full per-criterion breakdown
+//   scoredAt       DateTime @default(now()) @map("scored_at")
+//
+//   @@map("account_scores")
+// }
+
+// model ScoreHistory {
+//   id          String   @id @default(cuid())
+//   workspaceId String   @map("workspace_id")
+//   accountId   String   @map("account_id")
+//   score       Float
+//   tier        Int      // 1 | 2 | 3
+//   recordedAt  DateTime @default(now()) @map("recorded_at")
+//
+//   @@map("score_history")
+// }
+
+// model TierOverride {
+//   id           String   @id @default(cuid())
+//   workspaceId  String   @map("workspace_id")
+//   accountId    String   @map("account_id")
+//   tier         Int      // 1 | 2 | 3 — user override always wins
+//   reason       String              // required reason, logged for formula improvement
+//   overriddenBy String   @map("overridden_by")
+//   overriddenAt DateTime @default(now()) @map("overridden_at")
+//
+//   @@map("tier_overrides")
+// }

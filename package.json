@@ -1,30 +1,51 @@
 {
   "name": "abm-engine",
+  "version": "0.1.0",
   "private": true,
-  "version": "0.0.0",
-  "description": "CRM-agnostic ABM intelligence layer (OneGTMLab).",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "scripts": {
-    "build:packages": "npm --workspace @abm/shared run build && npm --workspace @abm/db run build",
-    "dev:web": "npm --workspace @abm/web run dev",
-    "dev:api": "npm --workspace @abm/api run start:dev",
-    "build": "npm run build:packages && npm --workspace @abm/api run build && npm --workspace @abm/web run build",
-    "typecheck": "npm run build:packages && npm --workspaces --if-present run typecheck",
-    "lint": "npm --workspaces --if-present run lint",
-    "db:generate": "npm --workspace @abm/db run generate",
-    "db:migrate": "npm --workspace @abm/db run migrate",
-    "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
-  },
+  "description": "ABM Engine — 11 independent event-driven engines for Account-Based Marketing.",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20"
+  },
+  "prisma": {
+    "schema": "prisma/schema"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "worker": "tsx workers/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@prisma/client": "^5.22.0",
+    "@upstash/redis": "^1.34.3",
+    "bullmq": "^5.34.0",
+    "ioredis": "5.10.1",
+    "next": "14.2.18",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "docx": "^9.7.1",
-    "playwright-core": "^1.60.0",
-    "typescript": "^5.6.3"
+    "@types/node": "^20.17.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.18",
+    "postcss": "^8.4.49",
+    "prisma": "^5.22.0",
+    "tailwindcss": "^3.4.15",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
   }
 }

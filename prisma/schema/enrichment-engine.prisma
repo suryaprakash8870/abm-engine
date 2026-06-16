@@ -1,0 +1,77 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine 03 — Enrichment Engine — owned by <unassigned>
+//
+// Tables this engine owns (no other engine queries them directly — they listen
+// to this engine's events and keep local copies). The stubs below are
+// COMMENTED-OUT so this file is valid-but-empty until the owner fills them in.
+//
+// TODO(owner): define models + add workspaceId + RLS (Supabase policy per table).
+//
+// CLAUDE.md rule: the shared `enrichment_cache` is the ONLY table without
+// workspaceId and the ONLY table read across workspaces — written ONLY here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// model EnrichmentJob {
+//   id          String    @id @default(cuid())
+//   workspaceId String    @map("workspace_id")
+//   sourceJobId String    @map("source_job_id") // the tam_build_jobs id that triggered enrichment
+//   status      String
+//   total       Int
+//   enriched    Int
+//   failed      Int
+//   startedAt   DateTime  @default(now()) @map("started_at")
+//
+//   @@map("enrichment_jobs")
+// }
+
+// model EnrichedAccount {
+//   id                String   @id @default(cuid())
+//   workspaceId       String   @map("workspace_id")
+//   domain            String
+//   name              String?
+//   industry          String?
+//   headcount         Int?
+//   revenue           BigInt?
+//   geography         String?
+//   fundingStage      String?  @map("funding_stage")
+//   techStack         String[] @map("tech_stack")
+//   dataQualityScore  Float    @map("data_quality_score")
+//   enrichedAt        DateTime @default(now()) @map("enriched_at")
+//   enrichmentSources String[] @map("enrichment_sources")
+//
+//   @@map("enriched_accounts")
+// }
+
+// model QualificationResult {
+//   id                   String   @id @default(cuid())
+//   accountId            String   @map("account_id")
+//   qualified            Boolean
+//   confidence           Float
+//   reason               String
+//   disqualifyingFactors String[] @map("disqualifying_factors")
+//
+//   @@map("qualification_results")
+// }
+
+// model PromptVersion {
+//   id            String   @id @default(cuid())
+//   promptKey     String   @map("prompt_key")
+//   version       Int
+//   content       String
+//   accuracyScore Float?   @map("accuracy_score")
+//   createdAt     DateTime @default(now()) @map("created_at")
+//
+//   @@map("prompt_versions")
+// }
+
+// SHARED across workspaces — no workspaceId. Written ONLY by this engine.
+// model EnrichmentCache {
+//   domain                  String   @id
+//   firmographics           Json?
+//   technographics          Json?
+//   enrichedAt              DateTime @default(now()) @map("enriched_at")
+//   firmographicExpiresAt   DateTime @map("firmographic_expires_at")  // 30-day firmographic TTL
+//   technographicExpiresAt  DateTime @map("technographic_expires_at") // 90-day technographic TTL
+//
+//   @@map("enrichment_cache")
+// }

@@ -1,0 +1,72 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine 05 — TAL Manager. Owned by <unassigned>.
+//
+// Tables this engine owns (no other engine queries them directly — they listen
+// to `tal.finalized` and keep local copies). This file is COMMENTS ONLY until
+// the owner fills in the models; comments-only is a valid Prisma schema file.
+//
+// TODO(owner): define models + add workspaceId + RLS to every table.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// target_account_lists (id, workspace_id, name, version, account_count, status, created_at)
+// model TargetAccountList {
+//   id           String   @id @default(cuid())
+//   workspaceId  String   @map("workspace_id")
+//   name         String
+//   version      Int
+//   accountCount Int      @map("account_count")
+//   status       String
+//   createdAt    DateTime @default(now()) @map("created_at")
+//
+//   @@index([workspaceId])
+//   @@map("target_account_lists")
+// }
+
+// tal_accounts (id, tal_id, account_id, tier, added_at) — join table
+// model TalAccount {
+//   id        String   @id @default(cuid())
+//   talId     String   @map("tal_id")
+//   accountId String   @map("account_id")
+//   tier      Int
+//   addedAt   DateTime @default(now()) @map("added_at")
+//
+//   @@index([talId])
+//   @@map("tal_accounts")
+// }
+
+// tal_versions (id, tal_id, version_number, snapshot JSONB, created_at)
+// model TalVersion {
+//   id            String   @id @default(cuid())
+//   talId         String   @map("tal_id")
+//   versionNumber Int      @map("version_number")
+//   snapshot      Json
+//   createdAt     DateTime @default(now()) @map("created_at")
+//
+//   @@index([talId])
+//   @@map("tal_versions")
+// }
+
+// suppression_list (id, workspace_id, domain, reason, suppressed_until, created_at)
+// model SuppressionEntry {
+//   id              String    @id @default(cuid())
+//   workspaceId     String    @map("workspace_id")
+//   domain          String
+//   reason          String
+//   suppressedUntil DateTime? @map("suppressed_until")
+//   createdAt       DateTime  @default(now()) @map("created_at")
+//
+//   @@index([workspaceId])
+//   @@map("suppression_list")
+// }
+
+// crm_audience_sync_log (id, tal_id, platform, status, synced_at)
+// model CrmAudienceSyncLog {
+//   id       String    @id @default(cuid())
+//   talId    String    @map("tal_id")
+//   platform String
+//   status   String
+//   syncedAt DateTime? @map("synced_at")
+//
+//   @@index([talId])
+//   @@map("crm_audience_sync_log")
+// }

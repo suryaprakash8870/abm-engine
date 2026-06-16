@@ -1,0 +1,30 @@
+{
+  "name": "abm-engine",
+  "private": true,
+  "version": "0.0.0",
+  "description": "CRM-agnostic ABM intelligence layer (OneGTMLab).",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:packages": "npm --workspace @abm/shared run build && npm --workspace @abm/db run build",
+    "dev:web": "npm --workspace @abm/web run dev",
+    "dev:api": "npm --workspace @abm/api run start:dev",
+    "build": "npm run build:packages && npm --workspace @abm/api run build && npm --workspace @abm/web run build",
+    "typecheck": "npm run build:packages && npm --workspaces --if-present run typecheck",
+    "lint": "npm --workspaces --if-present run lint",
+    "db:generate": "npm --workspace @abm/db run generate",
+    "db:migrate": "npm --workspace @abm/db run migrate",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "docx": "^9.7.1",
+    "playwright-core": "^1.60.0",
+    "typescript": "^5.6.3"
+  }
+}
