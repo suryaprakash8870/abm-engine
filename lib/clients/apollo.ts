@@ -75,21 +75,47 @@ function mockCompany(i: number, params: ApolloSearchParams): ApolloCompany {
 
 // ── Public search ────────────────────────────────────────────────────────────
 
+/** Thrown when the Apollo plan can't reach the search API (free-plan gating). */
+export class ApolloInaccessibleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ApolloInaccessibleError';
+  }
+}
+
+function mockPage(params: ApolloSearchParams, page: number, perPage: number, accountLimit: number): ApolloSearchPage {
+  const total = mockTotal(params, accountLimit);
+  const start = (page - 1) * perPage;
+  const companies = Array.from({ length: Math.max(0, Math.min(perPage, total - start)) }, (_, k) =>
+    mockCompany(start + k, params),
+  );
+  return { companies, total, page, perPage, hasMore: start + companies.length < total, raw: { mock: true, total, page } };
+}
+
 export async function searchCompanies(
   params: ApolloSearchParams,
   page: number,
   perPage = 25,
   accountLimit = 1000,
 ): Promise<ApolloSearchPage> {
-  if (shouldUseMock()) {
-    const total = mockTotal(params, accountLimit);
-    const start = (page - 1) * perPage;
-    const companies = Array.from({ length: Math.max(0, Math.min(perPage, total - start)) }, (_, k) =>
-      mockCompany(start + k, params),
-    );
-    return { companies, total, page, perPage, hasMore: start + companies.length < total, raw: { mock: true, total, page } };
+  if (shouldUseMock()) return mockPage(params, page, perPage, accountLimit);
+  try {
+    return await searchViaApollo(params, page, perPage);
+  } catch (e) {
+    // A real key on a plan without API access: degrade gracefully to mock data
+    // rather than failing the build (the doc's "never block the pipeline" rule).
+    if (e instanceof ApolloInaccessibleError) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          component: 'apollo',
+          msg: 'Apollo API not accessible on this plan — using MOCK companies. Upgrade Apollo for real data.',
+        }),
+      );
+      return mockPage(params, page, perPage, accountLimit);
+    }
+    throw e;
   }
-  return searchViaApollo(params, page, perPage);
 }
 
 /**
@@ -108,7 +134,21 @@ async function searchViaApollo(params: ApolloSearchParams, page: number, perPage
       organization_locations: params.geographies,
     }),
   });
-  if (!res.ok) throw new Error(`Apollo error ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    // 401/403 (and Apollo's specific markers) = the key/plan can't reach the search
+    // API. Treat as "inaccessible" so the caller falls back to mock instead of failing.
+    if (
+      res.status === 401 ||
+      res.status === 403 ||
+      body.includes('API_INACCESSIBLE') ||
+      body.includes('free plan') ||
+      body.includes('Invalid access credentials')
+    ) {
+      throw new ApolloInaccessibleError(`Apollo API not accessible (${res.status}): ${body}`);
+    }
+    throw new Error(`Apollo error ${res.status}: ${body}`);
+  }
   const data = (await res.json()) as {
     organizations?: { primary_domain?: string; name?: string; id?: string; industry?: string; estimated_num_employees?: number }[];
     pagination?: { total_entries?: number };
