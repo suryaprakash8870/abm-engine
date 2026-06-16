@@ -18,6 +18,7 @@ import { icpContentSchema, type IcpContent } from './types';
 /** True when synthesis should be mocked (no LLM call). */
 function shouldMockLlm(): boolean {
   if (process.env.ICP_LLM === 'mock') return true;
+  if (process.env.ICP_LLM === 'ollama') return false; // explicit local LLM provider
   // Convenience for local UI testing: auto-mock in `next dev` when no key is set.
   if (process.env.NODE_ENV === 'development' && !process.env.ANTHROPIC_API_KEY) {
     console.warn(
@@ -70,13 +71,41 @@ async function callEmitIcp(system: string, user: string): Promise<unknown> {
   return toolUse.input;
 }
 
+/**
+ * Local Ollama provider (TEST ONLY — set ICP_LLM=ollama). Uses Ollama's
+ * structured-output mode (`format` = the emit_icp JSON schema) so even a tiny model
+ * returns schema-shaped JSON. Anthropic stays the production default.
+ */
+async function ollamaEmit(system: string, user: string): Promise<unknown> {
+  const url = process.env.OLLAMA_URL ?? 'http://localhost:11434';
+  const model = process.env.OLLAMA_MODEL ?? 'qwen2.5:1.5b';
+  const res = await fetch(`${url}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      format: ICP_TOOL.input_schema, // constrained decoding → schema-shaped JSON
+      options: { temperature: 0.4 },
+      messages: [
+        { role: 'system', content: `${system}\nReturn ONLY a JSON object matching the schema.` },
+        { role: 'user', content: user },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Ollama error ${res.status}: ${await res.text()}`);
+  const data = (await res.json()) as { message?: { content?: string } };
+  return JSON.parse(data.message?.content ?? '{}');
+}
+
 /** Synthesise a validated IcpContent from a system + user prompt (one corrective retry). */
 export async function synthesiseContent(system: string, user: string): Promise<IcpContent> {
   if (shouldMockLlm()) return mockIcpContent();
 
-  const first = icpContentSchema.safeParse(await callEmitIcp(system, user));
+  const emit = process.env.ICP_LLM === 'ollama' ? ollamaEmit : callEmitIcp;
+  const first = icpContentSchema.safeParse(await emit(system, user));
   if (first.success) return first.data;
-  const second = icpContentSchema.safeParse(await callEmitIcp(system, user));
+  const second = icpContentSchema.safeParse(await emit(system, user));
   if (second.success) return second.data;
   throw new Error(`ICP synthesis failed schema validation: ${second.error.message}`);
 }
