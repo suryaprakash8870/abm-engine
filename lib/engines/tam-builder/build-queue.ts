@@ -49,7 +49,12 @@ export async function startTamBuild(input: {
   correlationId?: string;
 }): Promise<{ jobId: string; correlationId: string }> {
   const correlationId = input.correlationId ?? newCorrelationId();
-  const accountLimit = input.accountLimit ?? 1000;
+  // Cap the build size. Explicit TAM_ACCOUNT_LIMIT always wins; otherwise default low
+  // (25 ≈ one page) when a REAL Apollo key is set so credits can't be drained by accident.
+  const envLimit = Number(process.env.TAM_ACCOUNT_LIMIT);
+  const realApollo = !!process.env.APOLLO_API_KEY && process.env.TAM_SOURCE !== 'mock';
+  const accountLimit =
+    input.accountLimit ?? (Number.isFinite(envLimit) && envLimit > 0 ? envLimit : realApollo ? 25 : 1000);
   const job = await prisma.tamBuildJob.create({
     data: {
       workspaceId: input.workspaceId,

@@ -39,7 +39,7 @@ export async function handleIcpCreated(event: EventEnvelope<'icp.created'>): Pro
     workspaceId: event.workspace_id,
     icpId: event.payload.icp_id,
     filters,
-    accountLimit: 1000,
+    // accountLimit omitted → uses TAM_ACCOUNT_LIMIT (or 1000). Keep small for real Apollo.
     correlationId: event.correlation_id,
   });
 }
