@@ -1,0 +1,77 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine 08 — Awareness Engine · owned by <unassigned>
+//
+// Tables this engine owns (no other engine queries them directly; other engines
+// listen to this engine's events and keep their own local copies).
+//
+// TODO(owner): define models + add workspaceId + a Supabase RLS policy on each.
+//
+// The models below are COMMENTED OUT so this file stays valid-but-empty until the
+// owner fills them in. A Prisma schema file containing only comments is valid.
+// Follow the foundation conventions (see schema.prisma): String @id @default(cuid()),
+// @map("snake_case") column names, @@map("snake_case") table names, and a
+// `workspaceId String @map("workspace_id")` column on every table.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// awareness_scores — one row per account: its current decayed, capped (≤100) score + stage.
+// model AwarenessScore {
+//   id              String   @id @default(cuid())
+//   workspaceId     String   @map("workspace_id")
+//   accountId       String   @unique @map("account_id")
+//   currentScore    Int      @default(0) @map("current_score")          // capped at 100
+//   stage           String   @default("identified")                    // AwarenessStage
+//   score7dChange   Int      @default(0) @map("score_7d_change")
+//   score30dChange  Int      @default(0) @map("score_30d_change")
+//   lastCalculatedAt DateTime @default(now()) @map("last_calculated_at")
+//   lastSignalAt    DateTime? @map("last_signal_at")
+//   @@map("awareness_scores")
+// }
+
+// score_snapshots — one row per account per day, for the 30-day trend sparkline.
+// model ScoreSnapshot {
+//   id                 String   @id @default(cuid())
+//   workspaceId        String   @map("workspace_id")              // TODO(owner): add for RLS
+//   accountId          String   @map("account_id")
+//   date               DateTime @db.Date
+//   score              Int
+//   dominantSignalType String   @map("dominant_signal_type")
+//   @@unique([accountId, date])
+//   @@map("score_snapshots")
+// }
+
+// routing_rules — workspace rules: "if score > X and stage = Y → actions".
+// model RoutingRule {
+//   id            String   @id @default(cuid())
+//   workspaceId   String   @map("workspace_id")
+//   name          String
+//   isActive      Boolean  @default(true) @map("is_active")
+//   triggerConfig Json     @map("trigger_config")                 // JSONB: thresholds/stage/filters
+//   actions       String[]                                        // TEXT[]: slack_alert, crm_task, ...
+//   priority      Int      @default(0)
+//   cooldownDays  Int      @default(0) @map("cooldown_days")
+//   maxPerMonth   Int      @default(0) @map("max_per_month")
+//   @@map("routing_rules")
+// }
+
+// routing_rule_evaluations — audit row per (rule, account) evaluation.
+// model RoutingRuleEvaluation {
+//   id        String   @id @default(cuid())
+//   workspaceId String @map("workspace_id")                       // TODO(owner): add for RLS
+//   ruleId    String   @map("rule_id")
+//   accountId String   @map("account_id")
+//   matched   Boolean  @default(false)
+//   firedAt   DateTime? @map("fired_at")                          // null when matched but suppressed
+//   @@map("routing_rule_evaluations")
+// }
+
+// stage_change_log — append-only history of stage transitions per account.
+// model StageChangeLog {
+//   id          String   @id @default(cuid())
+//   workspaceId String   @map("workspace_id")                     // TODO(owner): add for RLS
+//   accountId   String   @map("account_id")
+//   fromStage   String   @map("from_stage")
+//   toStage     String   @map("to_stage")
+//   score       Int
+//   changedAt   DateTime @default(now()) @map("changed_at")
+//   @@map("stage_change_log")
+// }

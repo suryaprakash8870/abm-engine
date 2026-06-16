@@ -34,5 +34,9 @@ yarn-error.log*
 .turbo
 .vercel
 
-# drizzle generated
+# prisma generated client
+lib/generated/
+prisma/*.db
+
+# legacy (v0 prototype) drizzle generated
 packages/db/drizzle/meta

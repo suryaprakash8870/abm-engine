@@ -1,0 +1,53 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine 02 — TAM Builder · owned by <unassigned>
+//
+// Tables this engine OWNS (no other engine queries them directly — they listen
+// to tam.* events and keep their own local copies). Models are COMMENTED-OUT
+// stubs so this file is valid-but-empty until the owner fills it in.
+//
+// TODO(owner): define models + add workspaceId + a Supabase RLS policy to every table.
+//
+// See docs/engines/engine-02-tam-builder.md.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// model TamBuildJob {
+//   id          String    @id @default(cuid())
+//   workspaceId String    @map("workspace_id")
+//   icpId       String    @map("icp_id")
+//   status      String    // running | completed | failed
+//   totalFound  Int       @default(0) @map("total_found")
+//   processed   Int       @default(0)
+//   startedAt   DateTime? @map("started_at")
+//   completedAt DateTime? @map("completed_at")
+//   @@map("tam_build_jobs")
+// }
+
+// model ApolloSearchResult {
+//   id          String @id @default(cuid())
+//   jobId       String @map("job_id")
+//   rawResponse Json   @map("raw_response")
+//   pageNumber  Int    @map("page_number")
+//   @@map("apollo_search_results")
+// }
+
+// model RawAccountList {
+//   id          String   @id @default(cuid())
+//   workspaceId String   @map("workspace_id")
+//   jobId       String   @map("job_id")
+//   domain      String
+//   name        String
+//   apolloId    String?  @map("apollo_id")
+//   source      String   // apollo | csv_upload
+//   createdAt   DateTime @default(now()) @map("created_at")
+//   // Dedupe guarantee from the task-completion check:
+//   @@unique([workspaceId, domain])
+//   @@map("raw_account_list")
+// }
+
+// model SearchParamsLog {
+//   id          String @id @default(cuid())
+//   jobId       String @map("job_id")
+//   params      Json
+//   resultCount Int    @map("result_count")
+//   @@map("search_params_log")
+// }

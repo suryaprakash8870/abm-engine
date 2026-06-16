@@ -1,0 +1,63 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// FOUNDATION SCHEMA (Phase 0). Owned by the foundation/platform owner.
+//
+// Multi-file schema (prismaSchemaFolder): each engine owns its own file in this
+// folder — prisma/schema/<engine-slug>.prisma — so 11 people edit models in
+// parallel without ever touching the same file. This file holds the datasource,
+// generator, and the cross-cutting multi-tenancy tables only.
+//
+// RULES (CLAUDE.md):
+//   - Every engine table has `workspaceId` + a Supabase RLS policy.
+//   - The shared `enrichment_cache` (engine 03's file) is the ONLY table without
+//     workspaceId and the ONLY table read across engines.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["prismaSchemaFolder"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum WorkspaceRole {
+  owner
+  admin
+  member
+}
+
+model Workspace {
+  id        String            @id @default(cuid())
+  name      String
+  createdAt DateTime          @default(now()) @map("created_at")
+  members   WorkspaceMember[]
+
+  @@map("workspaces")
+}
+
+model User {
+  id         String            @id @default(cuid())
+  email      String            @unique
+  fullName   String?           @map("full_name")
+  createdAt  DateTime          @default(now()) @map("created_at")
+  membership WorkspaceMember[]
+
+  @@map("users")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String        @map("workspace_id")
+  userId      String        @map("user_id")
+  role        WorkspaceRole @default(member)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}

@@ -1,0 +1,69 @@
+// Engine 09 — Demand Gen Orchestrator
+// Owned by <unassigned>
+//
+// Tables this engine owns (no other engine queries them directly — they listen to
+// this engine's events and keep local copies). The models below are COMMENTED-OUT
+// stubs so this file is valid-but-empty until the owner fills them in.
+//
+// TODO(owner): define models + add workspaceId + RLS (Supabase Row-Level Security,
+//   ADR-004). Every table must carry workspace_id and an RLS policy scoping by tenant.
+
+// model plays_log {
+//   id                String   @id @default(uuid())
+//   workspace_id      String
+//   account_id        String
+//   contact_id        String?
+//   play_type         String
+//   trigger_type      String
+//   trigger_signal_id String?
+//   execution_method  String
+//   status            String
+//   crm_task_id       String?
+//   slack_message_ts  String?
+//   assigned_to       String?
+//   outcome           String?
+//   fired_at          DateTime
+// }
+
+// model play_templates {
+//   id              String @id @default(uuid())
+//   workspace_id    String
+//   play_type       String
+//   tier            Int
+//   stage           String
+//   template_config Json
+// }
+
+// model play_outcomes {
+//   id          String   @id @default(uuid())
+//   play_id     String
+//   outcome     String
+//   notes       String?
+//   recorded_at DateTime
+// }
+
+// model suppression_rules {
+//   id            String @id @default(uuid())
+//   workspace_id  String
+//   rule_type     String
+//   cooldown_days Int
+//   max_per_month Int
+// }
+
+// model sequence_mappings {
+//   id           String @id @default(uuid())
+//   workspace_id String
+//   tier         Int
+//   industry     String
+//   role         String
+//   sequence_id  String
+// }
+
+// model ai_draft_log {
+//   id            String   @id @default(uuid())
+//   play_id       String
+//   subject_lines String[]
+//   body          String
+//   model_used    String
+//   generated_at  DateTime
+// }

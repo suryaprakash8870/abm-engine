@@ -1,0 +1,90 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine 06 — Contact Engine. Owned by <unassigned>.
+//
+// Tables this engine owns (no other engine queries them directly — they listen
+// to `contacts.mapped` and keep local copies). This file is COMMENTS ONLY until
+// the owner fills in the models; comments-only is a valid Prisma schema file.
+//
+// TODO(owner): define models + add workspaceId + a Supabase RLS policy to every table.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// contacts (id, workspace_id, account_id, crm_contact_id, full_name, title,
+//           seniority, department, linkedin_url, email, email_status,
+//           stakeholder_role, role_confidence, engagement_score, sourced_at)
+// model Contact {
+//   id              String   @id @default(cuid())
+//   workspaceId     String   @map("workspace_id")
+//   accountId       String   @map("account_id")
+//   crmContactId    String?  @map("crm_contact_id")
+//   fullName        String   @map("full_name")
+//   title           String?
+//   seniority       String?
+//   department      String?
+//   linkedinUrl     String?  @map("linkedin_url")
+//   email           String?
+//   emailStatus     String?  @map("email_status")     // valid | risky | invalid | unverified
+//   stakeholderRole String?  @map("stakeholder_role") // decision_maker | champion | influencer
+//   roleConfidence  Float?   @map("role_confidence")
+//   engagementScore Float?   @map("engagement_score")
+//   sourcedAt       DateTime @default(now()) @map("sourced_at")
+//
+//   @@index([workspaceId])
+//   @@index([accountId])
+//   @@map("contacts")
+// }
+
+// stakeholder_maps (id, account_id, dm_contact_ids TEXT[], champion_contact_ids TEXT[],
+//                   influencer_contact_ids TEXT[])
+// model StakeholderMap {
+//   id                   String   @id @default(cuid())
+//   workspaceId          String   @map("workspace_id")
+//   accountId            String   @map("account_id")
+//   dmContactIds         String[] @map("dm_contact_ids")
+//   championContactIds   String[] @map("champion_contact_ids")
+//   influencerContactIds String[] @map("influencer_contact_ids")
+//
+//   @@index([workspaceId])
+//   @@index([accountId])
+//   @@map("stakeholder_maps")
+// }
+
+// email_verification_results (id, contact_id, status, bounce_risk, verified_at)
+// model EmailVerificationResult {
+//   id          String   @id @default(cuid())
+//   workspaceId String   @map("workspace_id")
+//   contactId   String   @map("contact_id")
+//   status      String                            // valid | risky | invalid
+//   bounceRisk  Float    @map("bounce_risk")
+//   verifiedAt  DateTime @default(now()) @map("verified_at")
+//
+//   @@index([workspaceId])
+//   @@index([contactId])
+//   @@map("email_verification_results")
+// }
+
+// contact_crm_sync_log (id, contact_id, status, synced_at)
+// model ContactCrmSyncLog {
+//   id          String    @id @default(cuid())
+//   workspaceId String    @map("workspace_id")
+//   contactId   String    @map("contact_id")
+//   status      String
+//   syncedAt    DateTime? @map("synced_at")
+//
+//   @@index([workspaceId])
+//   @@index([contactId])
+//   @@map("contact_crm_sync_log")
+// }
+
+// sourcing_jobs (id, workspace_id, account_id, status, contacts_found, started_at)
+// model SourcingJob {
+//   id            String   @id @default(cuid())
+//   workspaceId   String   @map("workspace_id")
+//   accountId     String   @map("account_id")
+//   status        String
+//   contactsFound Int      @default(0) @map("contacts_found")
+//   startedAt     DateTime @default(now()) @map("started_at")
+//
+//   @@index([workspaceId])
+//   @@index([accountId])
+//   @@map("sourcing_jobs")
+// }

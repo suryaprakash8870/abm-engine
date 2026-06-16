@@ -1,0 +1,78 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine 11 — GTM Flywheel (attribution, insights, ICP feedback loop)
+// Owned by <unassigned>
+//
+// TODO(owner): define models + add workspaceId + RLS (Supabase Row-Level Security).
+//
+// This file is intentionally comments-only for now — a Prisma schema folder file
+// with no uncommented blocks is valid. Uncomment + flesh out each model when the
+// owner starts. Every table MUST carry `workspaceId` and a matching RLS policy
+// (CLAUDE.md). No other engine queries these tables directly — they listen to
+// this engine's events and keep their own local copies.
+//
+// Tables this engine owns (docs/engines/engine-11-gtm-flywheel.md):
+//   pipeline_snapshots, attribution_events, win_loss_analysis,
+//   flywheel_metrics, signal_correlation_data
+// ─────────────────────────────────────────────────────────────────────────────
+
+// model PipelineSnapshot {
+//   id                   String   @id @default(cuid())
+//   workspaceId          String   @map("workspace_id")
+//   date                 DateTime
+//   pipelineByTier       Json     @map("pipeline_by_tier")
+//   winRateByTier        Json     @map("win_rate_by_tier")
+//   avgDealSizeByTier    Json     @map("avg_deal_size_by_tier")
+//
+//   @@index([workspaceId, date])
+//   @@map("pipeline_snapshots")
+// }
+
+// model AttributionEvent {
+//   id                       String   @id @default(cuid())
+//   workspaceId              String   @map("workspace_id")
+//   accountId                String   @map("account_id")
+//   dealId                   String   @map("deal_id")
+//   touchType                String   @map("touch_type")
+//   signalId                 String?  @map("signal_id")
+//   occurredBeforePipeline   Boolean  @map("occurred_before_pipeline")
+//   recordedAt               DateTime @default(now()) @map("recorded_at")
+//
+//   @@index([workspaceId, dealId])
+//   @@map("attribution_events")
+// }
+
+// model WinLossAnalysis {
+//   id                 String   @id @default(cuid())
+//   workspaceId        String   @map("workspace_id")
+//   dealId             String   @map("deal_id")
+//   outcome            String   // 'won' | 'lost'
+//   accountAttributes  Json     @map("account_attributes")
+//   analyzedAt         DateTime @default(now()) @map("analyzed_at")
+//
+//   @@index([workspaceId, outcome])
+//   @@map("win_loss_analysis")
+// }
+
+// model FlywheelMetric {
+//   id            String   @id @default(cuid())
+//   workspaceId   String   @map("workspace_id")
+//   metricKey     String   @map("metric_key")
+//   value         Float
+//   period        String
+//   calculatedAt  DateTime @default(now()) @map("calculated_at")
+//
+//   @@index([workspaceId, metricKey, period])
+//   @@map("flywheel_metrics")
+// }
+
+// model SignalCorrelationData {
+//   id                  String   @id @default(cuid())
+//   workspaceId         String   @map("workspace_id")
+//   signalCombination   String[] @map("signal_combination")
+//   correlationScore    Float    @map("correlation_score")
+//   sampleSize          Int      @map("sample_size")
+//   calculatedAt        DateTime @default(now()) @map("calculated_at")
+//
+//   @@index([workspaceId])
+//   @@map("signal_correlation_data")
+// }
