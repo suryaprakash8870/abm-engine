@@ -70,3 +70,23 @@ export const getIcp = (id: string) => call<IcpDefinition>(`/api/v1/icp/${id}`);
 
 export const updateIcp = (id: string, changes: Partial<IcpDefinition>) =>
   call<IcpDefinition>(`/api/v1/icp/${id}`, { method: 'PUT', body: JSON.stringify(changes) });
+
+// ── Engine 02 (TAM Builder) ──────────────────────────────────────────────────
+
+export interface TamLatest {
+  job_id: string;
+  status: string; // running | completed | failed
+  total_found: number;
+}
+
+export const getLatestTam = (icpId: string) => call<TamLatest | null>(`/api/v1/tam/latest/${icpId}`);
+
+export interface RawAccountRow {
+  id: string;
+  domain: string;
+  name: string;
+  source: string;
+}
+
+export const getTamAccounts = (jobId: string) =>
+  call<{ count: number; accounts: RawAccountRow[] }>(`/api/v1/tam/accounts/${jobId}`);

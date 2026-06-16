@@ -3,7 +3,52 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Card, SectionTitle, Pill, ChipList, ConfidenceBar, LinkButton, Banner } from '../ui';
-import { getIcp, type IcpDefinition } from '@/lib/web/icp-api';
+import { getIcp, getLatestTam, type IcpDefinition, type TamLatest } from '@/lib/web/icp-api';
+
+/** Live status of the auto-triggered TAM build (Engine 02) for this ICP. */
+function TamSection({ icpId }: { icpId: string }) {
+  const [tam, setTam] = useState<TamLatest | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let iv: ReturnType<typeof setInterval> | undefined;
+    const poll = async () => {
+      const res = await getLatestTam(icpId);
+      if (!active) return;
+      setLoaded(true);
+      const data = res.ok ? res.data ?? null : null;
+      setTam(data);
+      if (data && (data.status === 'completed' || data.status === 'failed') && iv) clearInterval(iv);
+    };
+    void poll();
+    iv = setInterval(poll, 3000);
+    return () => {
+      active = false;
+      if (iv) clearInterval(iv);
+    };
+  }, [icpId]);
+
+  return (
+    <Card className="space-y-2">
+      <SectionTitle>Account list · Engine 02</SectionTitle>
+      {!loaded && <p className="text-sm text-gray-400">Checking…</p>}
+      {loaded && !tam && (
+        <p className="text-sm text-gray-500">Sourcing starts automatically when the ICP is created.</p>
+      )}
+      {tam?.status === 'running' && <p className="text-sm text-gray-600">⏳ Building your account list…</p>}
+      {tam?.status === 'failed' && <Banner tone="red">Account-list build failed.</Banner>}
+      {tam?.status === 'completed' && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-700">
+            <strong>{tam.total_found}</strong> matching companies found.
+          </span>
+          <LinkButton href={`/accounts/${tam.job_id}`}>View account list →</LinkButton>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 /** A labelled row that pairs a small caption with a ChipList. */
 function ChipRow({ label, items }: { label: string; items: string[] }) {
@@ -104,9 +149,9 @@ export default function IcpReviewPage() {
         </Card>
       </div>
 
-      <div className="flex items-center justify-between border-t pt-6">
+      <div className="space-y-4 border-t pt-6">
+        <TamSection icpId={id} />
         <LinkButton href="/icp">← Back</LinkButton>
-        <span className="text-sm text-gray-400">Next: build the account list (Engine 02)</span>
       </div>
     </div>
   );
