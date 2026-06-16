@@ -49,14 +49,22 @@ vi.mock('../../db/client', () => ({
       }),
     wizardSession: { update: async () => ({}) },
     icpDefinition: { findFirst: async () => null },
+    crmAnalysisJob: { create: async () => ({ id: 'job_1' }), update: async () => ({}), findFirst: async () => null },
   },
 }));
 
 import { withCapturedEvents } from '../../events';
 import { assertMatchesCatalog } from '../contract';
 import engine from './index';
-import { runIcpSynthesis, routeToMode } from './service';
+import { runIcpSynthesis, runDealAnalysis, routeToMode } from './service';
 import { WIZARD_QUESTION_IDS } from './types';
+import {
+  analyseDeals,
+  computeDealStats,
+  mapCsvRowsToDeals,
+  InsufficientDealsError,
+  type Deal,
+} from './analysis';
 
 const answers = Object.fromEntries(WIZARD_QUESTION_IDS.map((id) => [id, 'sample answer']));
 
@@ -105,5 +113,67 @@ describe('routeToMode', () => {
   });
   it('routes a no-CRM user with deals to csv_import', () => {
     expect(routeToMode({ has_crm: false, has_deals: true, main_goal: 'pipeline' })).toBe('csv_import');
+  });
+});
+
+describe('icp-engine Modes B/C (deal analysis)', () => {
+  beforeEach(() => {
+    h.toolInput = h.validContent;
+  });
+
+  const sampleDeals: Deal[] = [
+    ...Array.from({ length: 6 }, (_, i) => ({
+      outcome: 'won' as const,
+      domain: `won${i}.com`,
+      industry: 'Software',
+      employees: 100 + i,
+      geography: 'North America',
+      tech: ['HubSpot'],
+      amount: 10_000,
+    })),
+    { outcome: 'lost', industry: 'Government', employees: 5000, geography: 'EU' },
+    { outcome: 'lost', industry: 'Government', employees: 3000, geography: 'EU' },
+  ];
+
+  it('analyseDeals throws InsufficientDealsError below the threshold', async () => {
+    await expect(analyseDeals([{ outcome: 'won', industry: 'X' }])).rejects.toBeInstanceOf(InsufficientDealsError);
+  });
+
+  it('computeDealStats summarises wins, losses, and industry win rate', () => {
+    const s = computeDealStats(sampleDeals);
+    expect(s.wonCount).toBe(6);
+    expect(s.lostCount).toBe(2);
+    expect(s.industryWinRate.find((i) => i.industry === 'Software')?.won).toBe(6);
+    expect(s.lostIndustries[0]?.industry).toBe('Government');
+    expect(s.avgWonAmount).toBe(10_000);
+  });
+
+  it('mapCsvRowsToDeals maps via field mapping and skips open deals', () => {
+    const rows = [
+      { Stage: 'Closed Won', Industry: 'SaaS', Emp: '120' },
+      { Stage: 'Closed Lost', Industry: 'Gov', Emp: '9000' },
+      { Stage: 'Open', Industry: 'X', Emp: '1' },
+    ];
+    const deals = mapCsvRowsToDeals(rows, { outcome: 'Stage', industry: 'Industry', employees: 'Emp' });
+    expect(deals).toHaveLength(2);
+    expect(deals[0]).toMatchObject({ outcome: 'won', industry: 'SaaS', employees: 120 });
+    expect(deals[1].outcome).toBe('lost');
+  });
+
+  it('runDealAnalysis publishes icp.created for a CRM analysis (Claude+DB mocked)', async () => {
+    const published = await withCapturedEvents(async () => {
+      await runDealAnalysis({ workspaceId: 'ws_1', jobId: 'job_1', mode: 'crm_analysis', deals: sampleDeals, correlationId: 'corr_1' });
+    });
+    const created = published.find((e) => e.type === 'icp.created');
+    expect(created).toBeDefined();
+    expect(created!.payload).toMatchObject({ mode: 'crm_analysis', icp_id: 'icp_1' });
+  });
+
+  it('runDealAnalysis publishes icp.error (not icp.created) when there are too few wins', async () => {
+    const published = await withCapturedEvents(async () => {
+      await runDealAnalysis({ workspaceId: 'ws_1', jobId: 'job_1', mode: 'csv_import', deals: [{ outcome: 'won', industry: 'X' }], correlationId: 'corr_1' });
+    });
+    expect(published.some((e) => e.type === 'icp.created')).toBe(false);
+    expect(published.some((e) => e.type === 'icp.error')).toBe(true);
   });
 });

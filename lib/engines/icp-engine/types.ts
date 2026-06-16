@@ -119,3 +119,15 @@ export const wizardAnswersSchema = z
   });
 
 export type WizardAnswers = Record<string, string>;
+
+/**
+ * Mode C request body. The CSV is parsed in the browser (Papa Parse) and sent as
+ * rows + a mapping from Deal fields → CSV column names. Recognised mapping keys:
+ * outcome, domain, industry, employees, revenue, geography, amount, tech.
+ */
+export const csvImportSchema = z.object({
+  rows: z.array(z.record(z.string(), z.string())).min(1),
+  field_mapping: z.record(z.string(), z.string()),
+});
+
+export type CsvImportBody = z.infer<typeof csvImportSchema>;

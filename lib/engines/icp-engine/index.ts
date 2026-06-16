@@ -27,6 +27,7 @@ import {
   handleIcpRefreshRecommended,
 } from './handlers';
 import { startSynthesisWorker } from './synthesis-queue';
+import { startAnalysisWorker } from './analysis-queue';
 
 const SLUG = 'icp-engine' as const;
 const VERSION = '0.1.0';
@@ -49,9 +50,10 @@ const icpEngine = {
     subscribeToEvent('crm.deal_closed_lost', handleCrmDealClosedLost, { engine: SLUG });
     subscribeToEvent('icp.refresh_recommended', handleIcpRefreshRecommended, { engine: SLUG });
 
-    // Mode A: the wizard route enqueues synthesis jobs; this worker runs them
-    // (Claude synthesis is async/queued, never inline in a request — CLAUDE.md rule 5).
-    startSynthesisWorker();
+    // Modes A / B / C enqueue their heavy work; these workers run it (Claude is
+    // async/queued, never inline in a request — CLAUDE.md rule 5).
+    startSynthesisWorker(); // Mode A — wizard synthesis
+    startAnalysisWorker(); // Modes B & C — deal analysis
   },
 
   /** Best-effort health probe backing GET /api/v1/icp-engine/health. */

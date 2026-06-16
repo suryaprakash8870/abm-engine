@@ -13,12 +13,13 @@ Owner: **Surya (Member A)**
 |---|---|
 | Prisma models (5 tables) | ✅ defined (`prisma/schema/icp-engine.prisma`) |
 | **Mode A — Hypothesis wizard** | ✅ implemented: 12-question wizard → queued Claude synthesis → `icp.created` |
-| Mode B — CRM analysis | ⛔ stub (route returns 501) |
-| Mode C — CSV import | ⛔ stub (route returns 501) |
+| **Mode B — CRM analysis** | ✅ analysis pipeline built; deal fetch gated on Engine 10 OAuth (route returns 424 until then) |
+| **Mode C — CSV import** | ✅ implemented: browser-parsed rows → shared analysis pipeline → `icp.created` |
+| Shared deal analysis | ✅ `analysis.ts` — win/loss stats → Claude interpretation (used by B & C) |
 | Edit ICP → `icp.updated` | ✅ `PUT /api/v1/icp/:id` |
 | Templates | ✅ `GET /api/v1/icp/templates` (6 templates) |
 | Feedback handlers (won/lost/refresh) | 🚧 wired + validated, core logic is `TODO(owner)` |
-| Tests | ✅ 6 passing (catalog, synthesis→`icp.created`, invalid→`icp.error`, routing) |
+| Tests | ✅ 11 passing (catalog, all-mode synthesis→`icp.created`, invalid/insufficient→`icp.error`, stats, CSV mapping, routing) |
 
 **How Mode A works:** `POST /api/v1/icp/wizard` validates the 12 answers, stores a
 `wizard_session`, and enqueues an `icp.synthesis` job (LLM is never run inline —
@@ -28,8 +29,14 @@ Claude Sonnet via a forced `emit_icp` tool call, validates the output against
 publishes `icp.created` — or `icp.error` if any check fails. Poll status at
 `GET /api/v1/icp/wizard/:sessionId`.
 
+**Modes B & C** share one pipeline (`analysis.ts`): normalise deals → win/loss
+statistics → Claude Sonnet interpretation → the same `IcpContent` → publish
+`icp.created` via the analysis worker. Mode B's deal source is HubSpot (Engine 10);
+Mode C's is an uploaded CSV (parsed in the browser, sent as `{ rows, field_mapping }`).
+< 5 closed-won deals → steer the user to Mode A.
+
 **To run live:** needs `ANTHROPIC_API_KEY`, `REDIS_URL`, and a migrated DB
-(`npx prisma migrate dev`). Until then, `npm run test` covers the flow with Claude + DB mocked.
+(`npx prisma migrate dev`). Until then, `npm run test` covers all three modes with Claude + DB mocked.
 
 ---
 

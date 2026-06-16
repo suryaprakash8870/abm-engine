@@ -1,21 +1,23 @@
 /**
- * Core service for the ICP Engine — Mode A (Hypothesis wizard) is implemented;
- * Modes B/C are follow-ups.
+ * Core service for the ICP Engine. All three modes are implemented:
+ *   - Mode A (Hypothesis wizard)  → synthesiseIcpFromWizard → runIcpSynthesis
+ *   - Mode B (CRM analysis)       → analyseDeals → runDealAnalysis
+ *   - Mode C (CSV import)         → analyseDeals → runDealAnalysis
  *
- * Flow: wizard answers → Claude Sonnet synthesis (structured output) → schema +
- * confidence completion check → persist & version → publish `icp.created`. The
- * synthesis is run by a worker off a queue (synthesis-queue.ts), never inline in a
- * request (CLAUDE.md rule 5).
+ * Every mode produces the identical `IcpContent`, then funnels through the shared
+ * `finalizeIcp` tail: completion check → persist & version → publish `icp.created`
+ * (or `icp.error` on any failed check — verify-before-publish, ADR-003). Heavy work
+ * is always queued, never run inline in a request (CLAUDE.md rule 5).
  *
  * Spec: ../../../docs/engines/engine-01-icp-engine.md
  */
 
-import type Anthropic from '@anthropic-ai/sdk';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../db/client';
-import { anthropic, MODELS } from '../../clients/anthropic';
 import type { IcpMode } from '../../events';
-import { ICP_TOOL, ICP_TOOL_NAME, SYSTEM_PROMPT, buildUserPrompt } from './prompts';
+import { SYSTEM_PROMPT, buildUserPrompt } from './prompts';
+import { synthesiseContent } from './claude';
+import { analyseDeals, InsufficientDealsError, type Deal } from './analysis';
 import {
   CRITERIA,
   icpContentSchema,
@@ -41,36 +43,9 @@ export function routeToMode(a: OnboardingAnswers): IcpMode {
   return a.has_deals ? 'crm_analysis' : 'hypothesis';
 }
 
-/** One Claude call forcing the emit_icp tool; returns the raw tool input. */
-async function callClaudeForIcp(answers: WizardAnswers): Promise<unknown> {
-  const messages: Anthropic.MessageParam[] = [
-    { role: 'user', content: buildUserPrompt(answers) },
-  ];
-  const resp = await anthropic().messages.create({
-    model: MODELS.reasoning,
-    max_tokens: 2000,
-    system: SYSTEM_PROMPT,
-    tools: [ICP_TOOL],
-    tool_choice: { type: 'tool', name: ICP_TOOL_NAME },
-    messages,
-  });
-  const toolUse = resp.content.find((b) => b.type === 'tool_use');
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    throw new Error('Claude did not return an emit_icp tool call');
-  }
-  return toolUse.input;
-}
-
-/**
- * Step 2 — Mode A: synthesise a validated ICP from the 12 wizard answers.
- * On a schema-validation miss, retry once (conventions.md), then fail.
- */
+/** Step 2 — Mode A: synthesise a validated ICP from the 12 wizard answers. */
 export async function synthesiseIcpFromWizard(answers: WizardAnswers): Promise<IcpContent> {
-  const first = icpContentSchema.safeParse(await callClaudeForIcp(answers));
-  if (first.success) return first.data;
-  const second = icpContentSchema.safeParse(await callClaudeForIcp(answers));
-  if (second.success) return second.data;
-  throw new Error(`ICP synthesis failed schema validation: ${second.error.message}`);
+  return synthesiseContent(SYSTEM_PROMPT, buildUserPrompt(answers));
 }
 
 /** Map a persisted row + content into the IcpDefinition shape. */
@@ -88,10 +63,7 @@ function toDefinition(row: { id: string; version: number; mode: string }, conten
   };
 }
 
-/**
- * Step 6 — persist a new ICP (version 1), snapshot it, and record confidence.
- * Every row carries workspaceId (RLS).
- */
+/** Step 6 — persist a new ICP (version 1), snapshot it, and record confidence. */
 export async function versionAndPersistIcp(
   workspaceId: string,
   content: IcpContent,
@@ -114,9 +86,7 @@ export async function versionAndPersistIcp(
     await tx.icpVersion.create({
       data: { icpId: def.id, versionNumber: 1, snapshot: content as Prisma.InputJsonValue },
     });
-    await tx.icpConfidenceHistory.create({
-      data: { icpId: def.id, confidenceScore },
-    });
+    await tx.icpConfidenceHistory.create({ data: { icpId: def.id, confidenceScore } });
     return def;
   });
   return toDefinition(created, content);
@@ -146,6 +116,47 @@ function confidencePopulated(content: IcpContent): { icp: boolean; every: boolea
   return { icp: overallConfidence(c) >= 0, every };
 }
 
+/**
+ * Shared tail for every mode: completion check → persist → publish `icp.created`.
+ * On a failed check, publishes `icp.error` instead and returns ok:false.
+ */
+async function finalizeIcp(input: {
+  workspaceId: string;
+  content: IcpContent;
+  mode: IcpMode;
+  correlationId: string;
+}): Promise<{ ok: boolean; def: IcpDefinition | null; reason?: string }> {
+  const ctx = { workspaceId: input.workspaceId, correlationId: input.correlationId };
+  const conf = confidencePopulated(input.content);
+  const gate = completionCheck({
+    schemaValid: icpContentSchema.safeParse(input.content).success,
+    icpConfidencePopulated: conf.icp,
+    everyCriterionConfidencePopulated: conf.every,
+    // We are about to publish; the engine's integration test is the confirming consumer.
+    createdEventConfirmedByConsumer: true,
+  });
+  if (!gate.ok) {
+    const reason = gate.failed.join('; ');
+    await publishIcpError({ icp_id: null, mode: input.mode, failure_reason: reason, stage: 'completion_check' }, ctx);
+    return { ok: false, def: null, reason };
+  }
+  const def = await versionAndPersistIcp(input.workspaceId, input.content, input.mode);
+  await publishIcpCreated(
+    {
+      icp_id: def.icp_id,
+      version: def.version,
+      mode: input.mode,
+      firmographics: def.firmographics,
+      technographics: def.technographics,
+      signals: def.signals,
+      exclusions: def.exclusions,
+      confidence_score: def.confidence_score,
+    },
+    ctx,
+  );
+  return { ok: true, def };
+}
+
 export interface SynthesisInput {
   workspaceId: string;
   answers: WizardAnswers;
@@ -153,50 +164,14 @@ export interface SynthesisInput {
   sessionId?: string;
 }
 
-/**
- * The end-to-end Mode A job (run by the synthesis worker):
- *   synth → completion check → persist → publish icp.created.
- * Verify-before-publish (ADR-003): on any failure it publishes `icp.error`
- * instead and marks the wizard session failed.
- */
+/** The end-to-end Mode A job (run by the synthesis worker). */
 export async function runIcpSynthesis(input: SynthesisInput): Promise<IcpDefinition | null> {
   const ctx = { workspaceId: input.workspaceId, correlationId: input.correlationId };
   try {
     const content = await synthesiseIcpFromWizard(input.answers);
-
-    const conf = confidencePopulated(content);
-    const gate = completionCheck({
-      schemaValid: icpContentSchema.safeParse(content).success,
-      icpConfidencePopulated: conf.icp,
-      everyCriterionConfidencePopulated: conf.every,
-      // We are about to publish; the engine's integration test is the confirming consumer.
-      createdEventConfirmedByConsumer: true,
-    });
-    if (!gate.ok) {
-      await publishIcpError(
-        { icp_id: null, mode: 'hypothesis', failure_reason: gate.failed.join('; '), stage: 'completion_check' },
-        ctx,
-      );
-      await markSession(input.sessionId, 'failed', null, gate.failed.join('; '));
-      return null;
-    }
-
-    const def = await versionAndPersistIcp(input.workspaceId, content, 'hypothesis');
-    await publishIcpCreated(
-      {
-        icp_id: def.icp_id,
-        version: def.version,
-        mode: 'hypothesis',
-        firmographics: def.firmographics,
-        technographics: def.technographics,
-        signals: def.signals,
-        exclusions: def.exclusions,
-        confidence_score: def.confidence_score,
-      },
-      ctx,
-    );
-    await markSession(input.sessionId, 'completed', def.icp_id, null);
-    return def;
+    const result = await finalizeIcp({ workspaceId: input.workspaceId, content, mode: 'hypothesis', correlationId: input.correlationId });
+    await markSession(input.sessionId, result.ok ? 'completed' : 'failed', result.def?.icp_id ?? null, result.ok ? null : result.reason ?? null);
+    return result.def;
   } catch (err) {
     const reason = err instanceof Error ? err.message : 'unknown synthesis error';
     await publishIcpError({ icp_id: null, mode: 'hypothesis', failure_reason: reason, stage: 'synthesis' }, ctx);
@@ -205,18 +180,34 @@ export async function runIcpSynthesis(input: SynthesisInput): Promise<IcpDefinit
   }
 }
 
-/** Update the wizard session's terminal status (no-op if there is no session). */
-async function markSession(
-  sessionId: string | undefined,
-  status: 'completed' | 'failed',
-  icpId: string | null,
-  error: string | null,
-): Promise<void> {
-  if (!sessionId) return;
-  await prisma.wizardSession.update({
-    where: { id: sessionId },
-    data: { status, icpId: icpId ?? undefined, error: error ?? undefined, completedAt: new Date() },
-  });
+export interface DealAnalysisInput {
+  workspaceId: string;
+  jobId: string;
+  mode: 'crm_analysis' | 'csv_import';
+  deals: Deal[];
+  correlationId: string;
+}
+
+/** The end-to-end Mode B/C job (run by the analysis worker). */
+export async function runDealAnalysis(input: DealAnalysisInput): Promise<IcpDefinition | null> {
+  const ctx = { workspaceId: input.workspaceId, correlationId: input.correlationId };
+  try {
+    const content = await analyseDeals(input.deals);
+    const result = await finalizeIcp({ workspaceId: input.workspaceId, content, mode: input.mode, correlationId: input.correlationId });
+    await markAnalysisJob(input.jobId, result.ok ? 'completed' : 'failed', result.def?.icp_id ?? null, result.ok ? null : result.reason ?? null);
+    return result.def;
+  } catch (err) {
+    if (err instanceof InsufficientDealsError) {
+      const reason = `Only ${err.wonCount} closed-won deals (<5) — use the wizard (Mode A).`;
+      await publishIcpError({ icp_id: null, mode: input.mode, failure_reason: reason, stage: 'insufficient_deals' }, ctx);
+      await markAnalysisJob(input.jobId, 'failed', null, reason);
+      return null;
+    }
+    const reason = err instanceof Error ? err.message : 'unknown analysis error';
+    await publishIcpError({ icp_id: null, mode: input.mode, failure_reason: reason, stage: 'analysis' }, ctx);
+    await markAnalysisJob(input.jobId, 'failed', null, reason);
+    return null;
+  }
 }
 
 export interface RevisionResult {
@@ -225,10 +216,7 @@ export interface RevisionResult {
   changedFields: string[];
 }
 
-/**
- * Step 7 — apply a manual edit to an existing ICP, cutting a new version.
- * Returns null if the ICP is not found in this workspace.
- */
+/** Step 7 — apply a manual edit to an existing ICP, cutting a new version. */
 export async function reviseIcp(
   workspaceId: string,
   id: string,
@@ -237,10 +225,7 @@ export async function reviseIcp(
   const current = await prisma.icpDefinition.findFirst({ where: { id, workspaceId } });
   if (!current) return null;
 
-  const latest = await prisma.icpVersion.findFirst({
-    where: { icpId: id },
-    orderBy: { versionNumber: 'desc' },
-  });
+  const latest = await prisma.icpVersion.findFirst({ where: { icpId: id }, orderBy: { versionNumber: 'desc' } });
   const base = (latest?.snapshot ?? {}) as IcpContent;
   const merged: IcpContent = {
     ...base,
@@ -263,9 +248,7 @@ export async function reviseIcp(
         confidenceScore,
       },
     });
-    await tx.icpVersion.create({
-      data: { icpId: id, versionNumber: newVersion, snapshot: merged as Prisma.InputJsonValue },
-    });
+    await tx.icpVersion.create({ data: { icpId: id, versionNumber: newVersion, snapshot: merged as Prisma.InputJsonValue } });
     await tx.icpConfidenceHistory.create({ data: { icpId: id, confidenceScore } });
   });
 
@@ -276,18 +259,29 @@ export async function reviseIcp(
   };
 }
 
-// ── Mode B / Mode C — follow-ups (not yet implemented) ───────────────────────
-
-export async function analyseCrmDeals(_workspaceId: string, _crmType: 'hubspot' | 'salesforce'): Promise<IcpContent> {
-  // TODO(owner): OAuth pull → win/loss statistical comparison → Sonnet interpretation.
-  throw new Error('Mode B (CRM analysis) not implemented yet');
+/** Update the wizard session's terminal status (no-op if there is no session). */
+async function markSession(
+  sessionId: string | undefined,
+  status: 'completed' | 'failed',
+  icpId: string | null,
+  error: string | null,
+): Promise<void> {
+  if (!sessionId) return;
+  await prisma.wizardSession.update({
+    where: { id: sessionId },
+    data: { status, icpId: icpId ?? undefined, error: error ?? undefined, completedAt: new Date() },
+  });
 }
 
-export async function analyseCsvImport(
-  _workspaceId: string,
-  _csvRows: unknown[],
-  _fieldMapping: Record<string, string>,
-): Promise<IcpContent> {
-  // TODO(owner): normalise mapped rows, then reuse the Mode B pipeline.
-  throw new Error('Mode C (CSV import) not implemented yet');
+/** Update the crm_analysis_job terminal status + result. */
+async function markAnalysisJob(
+  jobId: string,
+  status: 'completed' | 'failed',
+  icpId: string | null,
+  error: string | null,
+): Promise<void> {
+  await prisma.crmAnalysisJob.update({
+    where: { id: jobId },
+    data: { status, result: { icpId, error } as Prisma.InputJsonValue },
+  });
 }
