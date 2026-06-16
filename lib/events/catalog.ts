@@ -101,6 +101,15 @@ export const EVENT_ROUTES: EventRoute[] = [
   { event: 'flywheel.error', publishedBy: 'gtm-flywheel', consumedBy: [] },
 ];
 
+/**
+ * The BullMQ queue name for an event. MUST NOT contain ':' — BullMQ reserves it
+ * as a Redis key separator and throws "Queue name cannot contain :" otherwise.
+ * Event names use dots (e.g. "icp.created"), so the queue is "event.icp.created".
+ */
+export function eventQueueName(event: EventName): string {
+  return `event.${event}`;
+}
+
 /** Events a given engine subscribes to (its triggers). */
 export function consumedBy(slug: EngineSlug): EventName[] {
   return EVENT_ROUTES.filter((r) => r.consumedBy.includes(slug)).map((r) => r.event);

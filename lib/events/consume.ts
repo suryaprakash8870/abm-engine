@@ -14,7 +14,7 @@ import { Worker, type Job } from 'bullmq';
 import { getRedisConnection } from '../clients/redis';
 import { isValidEnvelope } from './envelope';
 import { sendToDeadLetter } from './dead-letter';
-import type { EngineSlug } from './catalog';
+import { eventQueueName, type EngineSlug } from './catalog';
 import type { EventEnvelope, EventName } from './types';
 
 export type EventHandler<T extends EventName> = (event: EventEnvelope<T>) => Promise<void>;
@@ -34,7 +34,7 @@ export function subscribeToEvent<T extends EventName>(
   opts: SubscribeOptions,
 ): Worker {
   const worker = new Worker(
-    `event:${type}`,
+    eventQueueName(type),
     async (job: Job) => {
       const data = job.data as unknown;
       if (!isValidEnvelope(data)) {

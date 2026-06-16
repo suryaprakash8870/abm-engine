@@ -10,6 +10,7 @@
 
 import { Queue } from 'bullmq';
 import { getRedisConnection } from '../clients/redis';
+import { eventQueueName } from './catalog';
 import { makeEnvelope, type PublishContext } from './envelope';
 import { recordIfCapturing } from './test-harness';
 import type { EventName, EventPayloads } from './types';
@@ -19,7 +20,7 @@ const queues = new Map<EventName, Queue>();
 export function eventQueue(event: EventName): Queue {
   let q = queues.get(event);
   if (!q) {
-    q = new Queue(`event:${event}`, {
+    q = new Queue(eventQueueName(event), {
       connection: getRedisConnection(),
       defaultJobOptions: {
         attempts: 5,

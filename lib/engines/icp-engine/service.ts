@@ -96,6 +96,9 @@ export async function versionAndPersistIcp(
 export async function getIcp(workspaceId: string, id: string): Promise<IcpDefinition | null> {
   const row = await prisma.icpDefinition.findFirst({ where: { id, workspaceId } });
   if (!row) return null;
+  // Per-criterion confidence lives in the latest version snapshot, not on the row.
+  const latest = await prisma.icpVersion.findFirst({ where: { icpId: id }, orderBy: { versionNumber: 'desc' } });
+  const snapshot = (latest?.snapshot ?? null) as IcpContent | null;
   return {
     icp_id: row.id,
     version: row.version,
@@ -105,7 +108,8 @@ export async function getIcp(workspaceId: string, id: string): Promise<IcpDefini
     signals: row.signals as IcpContent['signals'],
     exclusions: row.exclusions as IcpContent['exclusions'],
     confidence_score: row.confidenceScore,
-    criteria_confidence: {} as IcpContent['criteria_confidence'],
+    criteria_confidence:
+      snapshot?.criteria_confidence ?? { firmographics: 0, technographics: 0, signals: 0, exclusions: 0 },
   };
 }
 

@@ -8,6 +8,8 @@
  * Never import this from a web request — engines are wired here, not in routes.
  */
 
+// Load .env (tsx doesn't auto-load it; Next.js loads it for the web process itself).
+import 'dotenv/config';
 import { engines } from '../lib/engines/registry';
 import { registeredWorkers } from '../lib/events';
 
