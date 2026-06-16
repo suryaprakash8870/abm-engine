@@ -1,70 +1,80 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Engine 01 — ICP Engine  ·  owned by <unassigned>
+// Engine 01 — ICP Engine  ·  owned by Surya (Member A)
 //
-// Tables this engine owns (no other engine queries them directly). The models
-// below are COMMENTED-OUT stubs listing each table's columns; the file is valid
-// (comments only) until the owner fills them in.
+// Tables this engine owns (no other engine queries them directly). Every table
+// carries workspaceId; add a Supabase RLS policy tying access to workspace
+// membership when the foundation auth lands (Phase 0).
 //
 // Spec: ../../docs/engines/engine-01-icp-engine.md
-//
-// TODO(owner): define models + add workspaceId + RLS policy to every table.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// model IcpDefinition {
-//   id              String   @id @default(cuid())
-//   workspaceId     String   @map("workspace_id")
-//   version         Int
-//   mode            String   // IcpMode: hypothesis | crm_analysis | csv_import
-//   firmographics   Json
-//   technographics  Json
-//   signals         Json
-//   exclusions      Json
-//   confidenceScore Float    @map("confidence_score")
-//   createdAt       DateTime @default(now()) @map("created_at")
-//
-//   @@index([workspaceId])
-//   @@map("icp_definitions")
-// }
+model IcpDefinition {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  version         Int      @default(1)
+  mode            String // IcpMode: hypothesis | crm_analysis | csv_import
+  firmographics   Json
+  technographics  Json
+  signals         Json
+  exclusions      Json
+  confidenceScore Float    @map("confidence_score")
+  createdAt       DateTime @default(now()) @map("created_at")
 
-// model IcpVersion {
-//   id            String   @id @default(cuid())
-//   icpId         String   @map("icp_id")
-//   versionNumber Int      @map("version_number")
-//   snapshot      Json
-//   createdAt     DateTime @default(now()) @map("created_at")
-//
-//   @@index([icpId])
-//   @@map("icp_versions")
-// }
+  versions          IcpVersion[]
+  confidenceHistory IcpConfidenceHistory[]
 
-// model WizardSession {
-//   id          String    @id @default(cuid())
-//   workspaceId String    @map("workspace_id")
-//   answers     Json
-//   completedAt DateTime? @map("completed_at")
-//
-//   @@index([workspaceId])
-//   @@map("wizard_sessions")
-// }
+  @@index([workspaceId])
+  @@map("icp_definitions")
+}
 
-// model CrmAnalysisJob {
-//   id          String   @id @default(cuid())
-//   workspaceId String   @map("workspace_id")
-//   crmType     String   @map("crm_type") // CrmType: hubspot | salesforce
-//   status      String
-//   dealCount   Int      @map("deal_count")
-//   result      Json?
-//
-//   @@index([workspaceId])
-//   @@map("crm_analysis_jobs")
-// }
+model IcpVersion {
+  id            String   @id @default(cuid())
+  icpId         String   @map("icp_id")
+  versionNumber Int      @map("version_number")
+  snapshot      Json
+  createdAt     DateTime @default(now()) @map("created_at")
 
-// model IcpConfidenceHistory {
-//   id              String   @id @default(cuid())
-//   icpId           String   @map("icp_id")
-//   confidenceScore Float    @map("confidence_score")
-//   recordedAt      DateTime @default(now()) @map("recorded_at")
-//
-//   @@index([icpId])
-//   @@map("icp_confidence_history")
-// }
+  icp IcpDefinition @relation(fields: [icpId], references: [id], onDelete: Cascade)
+
+  @@index([icpId])
+  @@map("icp_versions")
+}
+
+model WizardSession {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  answers     Json
+  status      String    @default("processing") // processing | completed | failed
+  icpId       String?   @map("icp_id")
+  error       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  @@index([workspaceId])
+  @@map("wizard_sessions")
+}
+
+model CrmAnalysisJob {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  crmType     String   @map("crm_type") // CrmType: hubspot | salesforce
+  status      String
+  dealCount   Int      @default(0) @map("deal_count")
+  result      Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([workspaceId])
+  @@map("crm_analysis_jobs")
+}
+
+model IcpConfidenceHistory {
+  id              String   @id @default(cuid())
+  icpId           String   @map("icp_id")
+  confidenceScore Float    @map("confidence_score")
+  recordedAt      DateTime @default(now()) @map("recorded_at")
+
+  icp IcpDefinition @relation(fields: [icpId], references: [id], onDelete: Cascade)
+
+  @@index([icpId])
+  @@map("icp_confidence_history")
+}

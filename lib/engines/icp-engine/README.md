@@ -3,7 +3,33 @@
 > Builds the Ideal Customer Profile — the structured definition of who we should sell to, used as the primary instruction set by every downstream engine.
 
 Spec: [../../../docs/engines/engine-01-icp-engine.md](../../../docs/engines/engine-01-icp-engine.md)
-Owner: **_unassigned_**
+Owner: **Surya (Member A)**
+
+---
+
+## Status
+
+| Area | State |
+|---|---|
+| Prisma models (5 tables) | ✅ defined (`prisma/schema/icp-engine.prisma`) |
+| **Mode A — Hypothesis wizard** | ✅ implemented: 12-question wizard → queued Claude synthesis → `icp.created` |
+| Mode B — CRM analysis | ⛔ stub (route returns 501) |
+| Mode C — CSV import | ⛔ stub (route returns 501) |
+| Edit ICP → `icp.updated` | ✅ `PUT /api/v1/icp/:id` |
+| Templates | ✅ `GET /api/v1/icp/templates` (6 templates) |
+| Feedback handlers (won/lost/refresh) | 🚧 wired + validated, core logic is `TODO(owner)` |
+| Tests | ✅ 6 passing (catalog, synthesis→`icp.created`, invalid→`icp.error`, routing) |
+
+**How Mode A works:** `POST /api/v1/icp/wizard` validates the 12 answers, stores a
+`wizard_session`, and enqueues an `icp.synthesis` job (LLM is never run inline —
+CLAUDE.md rule 5). The worker (`synthesis-queue.ts`, started in `register()`) runs
+Claude Sonnet via a forced `emit_icp` tool call, validates the output against
+`icpContentSchema`, runs `completionCheck`, persists + versions the ICP, and
+publishes `icp.created` — or `icp.error` if any check fails. Poll status at
+`GET /api/v1/icp/wizard/:sessionId`.
+
+**To run live:** needs `ANTHROPIC_API_KEY`, `REDIS_URL`, and a migrated DB
+(`npx prisma migrate dev`). Until then, `npm run test` covers the flow with Claude + DB mocked.
 
 ---
 

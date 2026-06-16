@@ -1,57 +1,109 @@
 /**
- * Integration test for the ICP Engine (conventions.md: every engine writes one).
+ * Tests for the ICP Engine (Mode A — Hypothesis wizard).
  *
- * Test 1 — the engine's declared events match the frozen catalog.
- * Test 2 — feed a known CONSUMED event and assert the correct OUTPUT event type is
- *          captured on the in-memory bus.
- *
- * NOTE: the handlers' core logic is still a // TODO(owner) stub, so they do not yet
- * publish. Until they do, this test drives the publisher (the real producer of the
- * output event) inside the capture, keyed off the consumed event's payload. Replace
- * that with a direct `await handleIcpRefreshRecommended(input)` call once the
- * handler publishes — see the // TODO(owner) below.
+ *  - catalog match (every engine)
+ *  - runIcpSynthesis publishes icp.created from valid wizard answers (Claude + DB mocked)
+ *  - invalid synthesis output → icp.error (verify-before-publish, ADR-003)
+ *  - routeToMode routing logic
  */
 
-import { describe, it, expect } from 'vitest';
-import { fakeEvent, withCapturedEvents } from '../../events';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Shared, mutable mock state (hoisted so the vi.mock factories can read it).
+const h = vi.hoisted(() => {
+  const validContent: unknown = {
+    firmographics: {
+      industries: ['Software'],
+      employee_min: 51,
+      employee_max: 1000,
+      geographies: ['North America'],
+      business_model: 'B2B SaaS',
+    },
+    technographics: { required: ['HubSpot'], preferred: ['Segment'], excluded: [] },
+    signals: { high_intent: ['pricing page visit'], medium_intent: ['blog read'] },
+    exclusions: { industries: ['Government'], disqualifiers: ['<10 employees'] },
+    criteria_confidence: { firmographics: 0.9, technographics: 0.6, signals: 0.7, exclusions: 0.5 },
+    rationale: 'Mid-market SaaS fits best.',
+  };
+  return { validContent, toolInput: validContent as unknown };
+});
+
+vi.mock('../../clients/anthropic', () => ({
+  MODELS: { reasoning: 'claude-sonnet-4-6', batch: 'claude-haiku-4-5' },
+  anthropic: () => ({
+    messages: {
+      create: async () => ({
+        content: [{ type: 'tool_use', name: 'emit_icp', input: h.toolInput }],
+      }),
+    },
+  }),
+}));
+
+vi.mock('../../db/client', () => ({
+  prisma: {
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        icpDefinition: { create: async () => ({ id: 'icp_1', version: 1, mode: 'hypothesis' }) },
+        icpVersion: { create: async () => ({}) },
+        icpConfidenceHistory: { create: async () => ({}) },
+      }),
+    wizardSession: { update: async () => ({}) },
+    icpDefinition: { findFirst: async () => null },
+  },
+}));
+
+import { withCapturedEvents } from '../../events';
 import { assertMatchesCatalog } from '../contract';
 import engine from './index';
-import { publishIcpUpdated } from './publisher';
+import { runIcpSynthesis, routeToMode } from './service';
+import { WIZARD_QUESTION_IDS } from './types';
+
+const answers = Object.fromEntries(WIZARD_QUESTION_IDS.map((id) => [id, 'sample answer']));
 
 describe('icp-engine', () => {
+  beforeEach(() => {
+    h.toolInput = h.validContent;
+  });
+
   it('matches the event catalog', () => {
     expect(() => assertMatchesCatalog(engine)).not.toThrow();
   });
 
-  it('produces icp.updated in response to a consumed feedback event', async () => {
-    const input = fakeEvent('icp.refresh_recommended', {
-      closed_won_count: 7,
-      trigger_deal_id: 'deal_123',
-      new_closed_won_deal_ids: ['deal_123', 'deal_124'],
-      account_attributes: { industry: 'saas' },
-      recommended_changes_summary: 'Tighten firmographics to mid-market SaaS.',
+  it('publishes icp.created from valid wizard answers', async () => {
+    const published = await withCapturedEvents(async () => {
+      await runIcpSynthesis({ workspaceId: 'ws_1', answers, correlationId: 'corr_1' });
     });
+
+    const created = published.find((e) => e.type === 'icp.created');
+    expect(created).toBeDefined();
+    expect(created!.workspace_id).toBe('ws_1');
+    expect(created!.payload).toMatchObject({ icp_id: 'icp_1', version: 1, mode: 'hypothesis' });
+    // confidence = mean(0.9, 0.6, 0.7, 0.5) = 0.68
+    expect((created!.payload as { confidence_score: number }).confidence_score).toBeCloseTo(0.68, 2);
+    expect(published.some((e) => e.type === 'icp.error')).toBe(false);
+  });
+
+  it('publishes icp.error (not icp.created) when synthesis output is invalid', async () => {
+    h.toolInput = { firmographics: { industries: [] } }; // fails icpContentSchema
 
     const published = await withCapturedEvents(async () => {
-      // TODO(owner): once handleIcpRefreshRecommended publishes, replace the
-      // publisher call below with:  await handleIcpRefreshRecommended(input);
-      await publishIcpUpdated(
-        {
-          icp_id: 'icp_test',
-          version: 2,
-          previous_version: 1,
-          changed_fields: ['firmographics'],
-          confidence_score: 0.82,
-          update_source: 'flywheel_feedback',
-        },
-        { workspaceId: input.workspace_id, correlationId: input.correlation_id },
-      );
+      await runIcpSynthesis({ workspaceId: 'ws_1', answers, correlationId: 'corr_1' });
     });
 
-    expect(published).toContainEqual(
-      expect.objectContaining({ type: 'icp.updated' }),
-    );
-    // TODO(owner): assert payload fields (changed_fields, confidence_score, version)
-    // and that the completion check gated the publish.
+    expect(published.some((e) => e.type === 'icp.created')).toBe(false);
+    expect(published.some((e) => e.type === 'icp.error')).toBe(true);
+  });
+});
+
+describe('routeToMode', () => {
+  it('routes a user with a CRM and deals to crm_analysis', () => {
+    expect(routeToMode({ has_crm: true, has_deals: true, main_goal: 'pipeline' })).toBe('crm_analysis');
+  });
+  it('routes a user with no deals to hypothesis', () => {
+    expect(routeToMode({ has_crm: true, has_deals: false, main_goal: 'pipeline' })).toBe('hypothesis');
+    expect(routeToMode({ has_crm: false, has_deals: false, main_goal: 'pipeline' })).toBe('hypothesis');
+  });
+  it('routes a no-CRM user with deals to csv_import', () => {
+    expect(routeToMode({ has_crm: false, has_deals: true, main_goal: 'pipeline' })).toBe('csv_import');
   });
 });
