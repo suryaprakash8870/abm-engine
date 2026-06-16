@@ -177,3 +177,21 @@ describe('icp-engine Modes B/C (deal analysis)', () => {
     expect(published.some((e) => e.type === 'icp.error')).toBe(true);
   });
 });
+
+describe('icp-engine mock LLM mode (ICP_LLM=mock — free testing)', () => {
+  it('synthesises a valid ICP without calling Claude', async () => {
+    const prev = process.env.ICP_LLM;
+    process.env.ICP_LLM = 'mock';
+    h.toolInput = { invalid: true }; // would fail the schema if the real Claude path ran
+    try {
+      const published = await withCapturedEvents(async () => {
+        await runIcpSynthesis({ workspaceId: 'ws_1', answers, correlationId: 'corr_mock' });
+      });
+      expect(published.some((e) => e.type === 'icp.created')).toBe(true);
+      expect(published.some((e) => e.type === 'icp.error')).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.ICP_LLM;
+      else process.env.ICP_LLM = prev;
+    }
+  });
+});
