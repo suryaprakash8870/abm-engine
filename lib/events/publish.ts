@@ -4,23 +4,26 @@
  * Engines must never talk to Redis/BullMQ directly (conventions.md). They call
  * publishEvent() AFTER their task-completion check passes (ADR-003).
  *
- * Implementation: one BullMQ queue per event name on the shared Redis connection.
- * A queue-per-event keeps consumers cleanly separated and lets each scale alone.
+ * FAN-OUT: the event is enqueued once per subscribing engine (from the catalog's
+ * consumedBy), each on its own queue, so every subscriber receives a copy. An event
+ * with no consumers is a no-op on the bus (its error events still flow to the
+ * dead-letter inspector via the consumer side).
  */
 
 import { Queue } from 'bullmq';
 import { getRedisConnection } from '../clients/redis';
-import { eventQueueName } from './catalog';
+import { consumersOf, eventQueueName, type EngineSlug } from './catalog';
 import { makeEnvelope, type PublishContext } from './envelope';
 import { recordIfCapturing } from './test-harness';
 import type { EventName, EventPayloads } from './types';
 
-const queues = new Map<EventName, Queue>();
+const queues = new Map<string, Queue>();
 
-export function eventQueue(event: EventName): Queue {
-  let q = queues.get(event);
+export function eventQueue(event: EventName, engine: EngineSlug): Queue {
+  const name = eventQueueName(event, engine);
+  let q = queues.get(name);
   if (!q) {
-    q = new Queue(eventQueueName(event), {
+    q = new Queue(name, {
       connection: getRedisConnection(),
       defaultJobOptions: {
         attempts: 5,
@@ -29,7 +32,7 @@ export function eventQueue(event: EventName): Queue {
         removeOnFail: false, // keep failures so the dead-letter inspector can see them
       },
     });
-    queues.set(event, q);
+    queues.set(name, q);
   }
   return q;
 }
@@ -42,5 +45,6 @@ export async function publishEvent<T extends EventName>(
   const envelope = makeEnvelope(type, payload, ctx);
   // In integration tests the harness captures the event in-memory and skips Redis.
   if (recordIfCapturing(envelope)) return;
-  await eventQueue(type).add(type, envelope, { jobId: undefined });
+  const consumers: EngineSlug[] = consumersOf(type);
+  await Promise.all(consumers.map((engine) => eventQueue(type, engine).add(type, envelope)));
 }

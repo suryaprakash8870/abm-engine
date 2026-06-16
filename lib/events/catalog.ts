@@ -102,12 +102,18 @@ export const EVENT_ROUTES: EventRoute[] = [
 ];
 
 /**
- * The BullMQ queue name for an event. MUST NOT contain ':' — BullMQ reserves it
- * as a Redis key separator and throws "Queue name cannot contain :" otherwise.
- * Event names use dots (e.g. "icp.created"), so the queue is "event.icp.created".
+ * The BullMQ queue name for delivering an event to ONE subscribing engine.
+ *
+ * Fan-out, not competition: BullMQ is a work queue, so multiple engines on a single
+ * queue would compete (only one gets each job). Each (event, engine) pair gets its
+ * OWN queue so every subscriber receives every event. The publisher enqueues to one
+ * queue per `consumedBy(event)` engine.
+ *
+ * MUST NOT contain ':' (BullMQ reserves it). Event names use dots, slugs use dashes,
+ * so e.g. "event.icp.created.tam-builder".
  */
-export function eventQueueName(event: EventName): string {
-  return `event.${event}`;
+export function eventQueueName(event: EventName, engine: EngineSlug): string {
+  return `event.${event}.${engine}`;
 }
 
 /** Events a given engine subscribes to (its triggers). */
@@ -118,4 +124,9 @@ export function consumedBy(slug: EngineSlug): EventName[] {
 /** Events a given engine publishes (its outputs). */
 export function publishedBy(slug: EngineSlug): EventName[] {
   return EVENT_ROUTES.filter((r) => r.publishedBy === slug).map((r) => r.event);
+}
+
+/** Engines that consume a given event (its fan-out targets when publishing). */
+export function consumersOf(event: EventName): EngineSlug[] {
+  return EVENT_ROUTES.find((r) => r.event === event)?.consumedBy ?? [];
 }

@@ -1,44 +1,29 @@
 /**
  * Event handlers for the TAM Builder (engine 02).
  *
- * One async handler per CONSUMED event. The engine consumes exactly one trigger:
- *   - icp.created → handleIcpCreated
+ * Consumes exactly one trigger: `icp.created`. On a valid ICP it derives Apollo
+ * filters from the firmographics and enqueues a TAM build (the heavy paginated
+ * search runs in the build worker, never inline). This is the first forward link
+ * in the pipeline: ICP → account list.
  *
- * Handler shape (verify-before-publish, ADR-003):
- *   1. validate the incoming payload (validation.ts),
- *   2. run the core job (service.ts),
- *   3. run the task-completion check,
- *   4. publish `tam.search_completed` ONLY if it passes, else `tam.search_failed`.
- *
- * This is a compiling stub: the orchestration is sketched, the heavy lifting is
- * left as TODO(owner). See docs/engines/engine-02-tam-builder.md.
+ * Spec: ../../../docs/engines/engine-02-tam-builder.md
  */
 
 import type { EventEnvelope } from '../../events';
 import { validateIcpCreatedPayload } from './validation';
-import { publishTamSearchCompleted, publishTamSearchFailed } from './publisher';
+import { publishTamSearchFailed } from './publisher';
+import { icpToFilters } from './service';
+import { startTamBuild } from './build-queue';
 
-/**
- * Trigger: `icp.created`. Builds the raw TAM list for the new ICP and publishes
- * `tam.search_completed` (or `tam.search_failed` on any failed completion check).
- */
-export async function handleIcpCreated(
-  event: EventEnvelope<'icp.created'>,
-): Promise<void> {
-  const ctx = {
-    workspaceId: event.workspace_id,
-    correlationId: event.correlation_id,
-  };
-  // Captured up front: the false branch of the type guard narrows event.payload
-  // to `never`, so read the id here while it is still typed.
-  const icpId = (event.payload as { icp_id?: unknown }).icp_id;
+/** Trigger: `icp.created`. Build the raw TAM list for the new ICP. */
+export async function handleIcpCreated(event: EventEnvelope<'icp.created'>): Promise<void> {
+  const ctx = { workspaceId: event.workspace_id, correlationId: event.correlation_id };
 
-  // 1. Validate the incoming payload before doing any work (conventions.md).
   if (!validateIcpCreatedPayload(event.payload)) {
     await publishTamSearchFailed(
       {
         job_id: '',
-        icp_id: typeof icpId === 'string' ? icpId : '',
+        icp_id: typeof (event.payload as { icp_id?: unknown })?.icp_id === 'string' ? (event.payload as { icp_id: string }).icp_id : '',
         error_code: 'invalid_payload',
         error_message: 'icp.created payload failed structural validation',
         last_processed_page: 0,
@@ -49,15 +34,12 @@ export async function handleIcpCreated(
     return;
   }
 
-  // TODO(owner): core logic — run the step-by-step job from service.ts:
-  //   createBuildJob → extractFirmographics → buildSearchParamSets →
-  //   runApolloSearch (paginate) → mergeAndDedupe → mergeUploadedAccounts →
-  //   persistRawAccounts → summariseSources → streamProgress.
-  // Then run completionCheck(...) and branch:
-  //   - if ok  → publishTamSearchCompleted({ job_id, icp_id, account_ids, total_found, account_limit, source_breakdown }, ctx)
-  //   - if !ok → publishTamSearchFailed({ job_id, icp_id, error_code, error_message, last_processed_page, processed }, ctx)
-  //
-  // The placeholder publish below keeps the handler compiling and documents the
-  // success contract; replace it with the real branch once the job is wired.
-  void publishTamSearchCompleted;
+  const filters = icpToFilters(event.payload);
+  await startTamBuild({
+    workspaceId: event.workspace_id,
+    icpId: event.payload.icp_id,
+    filters,
+    accountLimit: 1000,
+    correlationId: event.correlation_id,
+  });
 }

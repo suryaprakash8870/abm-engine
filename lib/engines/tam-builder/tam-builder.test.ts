@@ -1,68 +1,82 @@
 /**
- * Integration test for the TAM Builder (engine 02).
- *
- * Every engine ships ONE integration test (conventions.md): feed a known input
- * event, assert the correct output event is published. Deeper assertions are
- * left as TODO(owner) until the core job is implemented.
+ * Tests for the TAM Builder (engine 02).
+ *  - catalog match
+ *  - icpToFilters / normalizeDomain / dedupeByDomain
+ *  - runTamBuild dedupes and publishes tam.search_completed (Apollo + DB mocked)
  */
 
-import { describe, it, expect } from 'vitest';
-import { fakeEvent, withCapturedEvents } from '../../events';
-import type { TamSearchCompletedPayload } from '../../events';
-import { assertMatchesCatalog } from '../contract';
-import { engine } from './index';
-import { handleIcpCreated } from './handlers';
-import { publishTamSearchCompleted } from './publisher';
+import { describe, it, expect, vi } from 'vitest';
 
-describe('tam-builder engine', () => {
-  it('matches the frozen event catalog', () => {
-    // The engine's declared consumes/publishes must agree with the catalog.
+vi.mock('../../clients/apollo', () => ({
+  searchCompanies: async () => ({
+    companies: [
+      { domain: 'acme.com', name: 'Acme', apolloId: '1', industry: 'Software', employees: 100, geography: 'US' },
+      { domain: 'globex.com', name: 'Globex', apolloId: '2', industry: 'Software', employees: 200, geography: 'US' },
+      { domain: 'ACME.com', name: 'Acme (dup)', apolloId: '3', industry: 'Software', employees: 100, geography: 'US' },
+    ],
+    total: 3,
+    page: 1,
+    perPage: 25,
+    hasMore: false,
+    raw: { mock: true },
+  }),
+}));
+
+vi.mock('../../db/client', () => ({
+  prisma: {
+    apolloSearchResult: { create: async () => ({}) },
+    searchParamsLog: { create: async () => ({}) },
+    rawAccount: {
+      createMany: async () => ({ count: 2 }),
+      findMany: async () => [{ id: 'acc_acme' }, { id: 'acc_globex' }],
+    },
+    tamBuildJob: { create: async () => ({ id: 'job_1' }), update: async () => ({}), findFirst: async () => null },
+  },
+}));
+
+import { withCapturedEvents } from '../../events';
+import { assertMatchesCatalog } from '../contract';
+import engine from './index';
+import { runTamBuild, icpToFilters, normalizeDomain, dedupeByDomain } from './service';
+import type { ApolloCompany } from '../../clients/apollo';
+
+const company = (domain: string): ApolloCompany => ({ domain, name: domain, apolloId: domain, industry: null, employees: null, geography: null });
+
+describe('tam-builder', () => {
+  it('matches the event catalog', () => {
     expect(() => assertMatchesCatalog(engine)).not.toThrow();
   });
 
-  it('publishes a tam.* event when handling icp.created', async () => {
-    const input = fakeEvent('icp.created', {
-      icp_id: 'icp_test_1',
-      version: 1,
-      mode: 'hypothesis',
-      firmographics: { industry: ['software'], headcount: '51-200' },
-      technographics: {},
-      signals: {},
-      exclusions: {},
-      confidence_score: 0.8,
+  it('icpToFilters maps the ICP firmographics onto Apollo filters', () => {
+    const filters = icpToFilters({
+      icp_id: 'icp_1', version: 1, mode: 'hypothesis',
+      firmographics: { industries: ['Software'], employee_min: 51, employee_max: 1000, geographies: ['US'], business_model: 'B2B' },
+      technographics: {}, signals: {}, exclusions: {}, confidence_score: 0.8,
     });
+    expect(filters.industries).toEqual(['Software']);
+    expect(filters.employeeMin).toBe(51);
+    expect(filters.employeeMax).toBe(1000);
+    expect(filters.geographies).toEqual(['US']);
+  });
 
+  it('normalizeDomain + dedupeByDomain', () => {
+    expect(normalizeDomain('HTTPS://WWW.Acme.com/pricing')).toBe('acme.com');
+    expect(dedupeByDomain([company('a.com'), company('A.com'), company('b.com')])).toHaveLength(2);
+  });
+
+  it('runTamBuild dedupes and publishes tam.search_completed', async () => {
     const published = await withCapturedEvents(async () => {
-      // Handler accepts the valid trigger without throwing.
-      await handleIcpCreated(input);
-
-      // The core job is still a stub (// TODO(owner)). Once it runs the
-      // step-by-step search and passes completionCheck, the handler itself will
-      // publish this. For now we exercise the publish path directly so the test
-      // asserts the contract output type (matches the pattern in the other engines).
-      const payload: TamSearchCompletedPayload = {
-        job_id: 'job_test_1',
-        icp_id: 'icp_test_1',
-        account_ids: ['acc_1', 'acc_2'],
-        total_found: 2,
-        account_limit: 1000,
-        source_breakdown: { apollo: 2 },
-      };
-      await publishTamSearchCompleted(payload, {
-        workspaceId: input.workspace_id,
-        correlationId: input.correlation_id,
+      await runTamBuild({
+        workspaceId: 'ws_1', jobId: 'job_1', icpId: 'icp_1',
+        filters: { industries: ['Software'], employeeMin: 51, employeeMax: 1000, geographies: ['US'] },
+        accountLimit: 1000, correlationId: 'corr_1',
       });
     });
-
-    // The handler/publish path must emit one of the engine's published events.
-    const tamEvents = published.filter(
-      (e) => e.type === 'tam.search_completed' || e.type === 'tam.search_failed',
-    );
-    expect(tamEvents.length).toBeGreaterThanOrEqual(1);
-    expect(engine.publishes).toContain(tamEvents[0].type);
-
-    // TODO(owner): once the job is implemented, drive this through the handler
-    // end-to-end and validate the payload (account_ids, total_found,
-    // account_limit, source_breakdown) against a stubbed Apollo response.
+    const done = published.find((e) => e.type === 'tam.search_completed');
+    expect(done).toBeDefined();
+    // ACME.com deduped against acme.com → 2 unique accounts.
+    expect((done!.payload as { total_found: number }).total_found).toBe(2);
+    expect((done!.payload as { account_ids: string[] }).account_ids).toHaveLength(2);
+    expect(published.some((e) => e.type === 'tam.search_failed')).toBe(false);
   });
 });

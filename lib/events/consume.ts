@@ -34,7 +34,7 @@ export function subscribeToEvent<T extends EventName>(
   opts: SubscribeOptions,
 ): Worker {
   const worker = new Worker(
-    eventQueueName(type),
+    eventQueueName(type, opts.engine),
     async (job: Job) => {
       const data = job.data as unknown;
       if (!isValidEnvelope(data)) {

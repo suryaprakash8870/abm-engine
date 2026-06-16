@@ -1,24 +1,27 @@
 /**
  * Foundation event-bus guards.
  *
- * Regression: BullMQ throws "Queue name cannot contain :" — so the queue name for
- * EVERY event must avoid ':'. The unit tests for engines mock the bus, so only
- * this test (and a live worker) catches a bad queue name.
+ *  - BullMQ throws "Queue name cannot contain :" → no queue name may contain ':'.
+ *  - Fan-out correctness: every (event, engine) pair maps to a unique queue, so each
+ *    subscriber gets its own copy of the event (not competing on one queue).
+ *
+ * Engine unit tests mock the bus, so only this test (+ a live worker) catches these.
  */
 
 import { describe, it, expect } from 'vitest';
 import { EVENT_ROUTES, eventQueueName } from './catalog';
 
 describe('event bus', () => {
-  it('no event queue name contains ":" (BullMQ would throw)', () => {
+  it('no event queue name contains ":"', () => {
     for (const route of EVENT_ROUTES) {
-      const name = eventQueueName(route.event);
-      expect(name).not.toContain(':');
+      for (const engine of route.consumedBy) {
+        expect(eventQueueName(route.event, engine)).not.toContain(':');
+      }
     }
   });
 
-  it('queue names are unique per event', () => {
-    const names = EVENT_ROUTES.map((r) => eventQueueName(r.event));
+  it('every (event, engine) pair has a unique queue (fan-out, not competition)', () => {
+    const names = EVENT_ROUTES.flatMap((r) => r.consumedBy.map((e) => eventQueueName(r.event, e)));
     expect(new Set(names).size).toBe(names.length);
   });
 });

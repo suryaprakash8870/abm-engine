@@ -18,6 +18,7 @@ import { prisma } from '../../db/client';
 import { pingRedis } from '../../clients/redis';
 import type { EngineModule, HealthStatus } from '../contract';
 import { handleIcpCreated } from './handlers';
+import { startTamBuildWorker } from './build-queue';
 
 const SLUG = 'tam-builder' as const;
 const VERSION = '0.1.0';
@@ -32,7 +33,9 @@ const engine = {
    * TAM Builder consumes a single trigger — `icp.created` — routed to its handler.
    */
   register(): void {
+    // icp.created → derive filters → enqueue a TAM build (run by the worker below).
     subscribeToEvent('icp.created', handleIcpCreated, { engine: SLUG });
+    startTamBuildWorker();
   },
 
   /**
