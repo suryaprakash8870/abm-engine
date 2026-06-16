@@ -16,7 +16,7 @@ import { ICP_TOOL, ICP_TOOL_NAME } from './prompts';
 import { icpContentSchema, type IcpContent } from './types';
 
 /** True when synthesis should be mocked (no LLM call). */
-function useMockLlm(): boolean {
+function shouldMockLlm(): boolean {
   if (process.env.ICP_LLM === 'mock') return true;
   // Convenience for local UI testing: auto-mock in `next dev` when no key is set.
   if (process.env.NODE_ENV === 'development' && !process.env.ANTHROPIC_API_KEY) {
@@ -72,7 +72,7 @@ async function callEmitIcp(system: string, user: string): Promise<unknown> {
 
 /** Synthesise a validated IcpContent from a system + user prompt (one corrective retry). */
 export async function synthesiseContent(system: string, user: string): Promise<IcpContent> {
-  if (useMockLlm()) return mockIcpContent();
+  if (shouldMockLlm()) return mockIcpContent();
 
   const first = icpContentSchema.safeParse(await callEmitIcp(system, user));
   if (first.success) return first.data;
