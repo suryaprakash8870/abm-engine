@@ -1,7 +1,7 @@
 # Team Assignment — 11 engines, 4 members
 
 > The concrete instantiation of [`ownership.md`](ownership.md) for a 4-person team
-> (3 members own 3 engines each, 1 member owns 2). Fill in the **Name** column at kickoff.
+> (3 members own 3 engines each, 1 member owns 2). Owners are assigned below.
 >
 > The split maps each member to a **contiguous segment of the pipeline**, so most
 > engine-to-engine boundaries stay *inside* one person's ownership and the
@@ -25,10 +25,10 @@
 
 | Member | Name | Engines | Theme | Why grouped |
 |--------|------|---------|-------|-------------|
-| **A** | _________ | 01 ICP · 02 TAM · 03 Enrichment | Targeting & data pipeline | TAM + Enrichment are tightly coupled (built together in `plan.md`); all three are "front of funnel." Heavy on Apollo/Claude. |
-| **B** | _________ | 04 Scoring · 05 TAL | Scoring & list (revenue) | The pair that produces the first sellable output. Lighter on engine count → this member also owns **Stripe billing** (lands in Phase 3 here). |
-| **C** | _________ | 06 Contact · 07 Signal · 08 Awareness | Engagement intelligence | Contacts → signals → awareness is one cohesive loop (`signal.received` stays *within* C). |
-| **D** | _________ | 09 Orchestrator · 10 CRM Sync · 11 Flywheel | Execution, sync & learning | Owns the two cross-cutting engines (CRM Sync writes for *everyone*; Flywheel listens to *everyone*) + the Orchestrator. Give to the strongest/most senior dev — D is the **integration owner**. |
+| **A** | **Surya** | 01 ICP · 02 TAM · 03 Enrichment | Targeting & data pipeline | TAM + Enrichment are tightly coupled (built together in `plan.md`); all three are "front of funnel." Heavy on Apollo/Claude. |
+| **B** | **Nethaji** | 04 Scoring · 05 TAL | Scoring & list (revenue) | The pair that produces the first sellable output. Lighter on engine count → this member also owns **Stripe billing** (lands in Phase 3 here). |
+| **C** | **Anto** | 06 Contact · 07 Signal · 08 Awareness | Engagement intelligence | Contacts → signals → awareness is one cohesive loop (`signal.received` stays *within* C). |
+| **D** | **Vicky** | 09 Orchestrator · 10 CRM Sync · 11 Flywheel | Execution, sync & learning | Owns the two cross-cutting engines (CRM Sync writes for *everyone*; Flywheel listens to *everyone*) + the Orchestrator. Give to the strongest/most senior dev — D is the **integration owner**. |
 
 > Swap engines based on individual strengths, but keep each person on a **contiguous
 > band** — that is what minimizes coordination.
@@ -42,9 +42,10 @@ person mocks their upstream input and asserts their output in isolation (the
 connect*, not *when people work*.
 
 1. **Week 1 — Foundation sprint (all hands).** The foundation is scaffolded but not
-   "real" yet. **Member D leads** wiring Supabase auth + RLS, Upstash `REDIS_URL`,
-   CI/CD, and the app shell — the Phase 0 checklist in [`todo.md`](todo.md). A, B, C
-   contribute and, in parallel, model their first engine's Prisma tables and write
+   "real" yet. **Vicky (Member D) leads** wiring Supabase auth + RLS, Upstash
+   `REDIS_URL`, CI/CD, and the app shell — the Phase 0 checklist in [`todo.md`](todo.md).
+   Surya, Nethaji and Anto contribute and, in parallel, model their first engine's
+   Prisma tables and write
    their integration tests against the frozen contracts.
 2. **Week 2 onward — parallel ownership.** Each member builds their band using the
    per-engine loop in [`ownership.md`](ownership.md), mocking cross-member inputs.
@@ -58,10 +59,10 @@ they are frozen.
 
 | Seam | Event(s) | Producer → Consumer |
 |------|----------|---------------------|
-| 1 | `accounts.enriched` (+ `icp.created`, which Scoring also consumes) | **A → B** |
-| 2 | `tal.finalized` | **B → C** *and* **B → D** |
-| 3 | `account.stage_changed`, `account.hot` | **C → D** |
-| 4 | `crm.deal_closed_won/lost`, `icp.refresh_recommended` | **D → A** (closes the flywheel) |
+| 1 | `accounts.enriched` (+ `icp.created`, which Scoring also consumes) | **Surya (A) → Nethaji (B)** |
+| 2 | `tal.finalized` | **Nethaji (B) → Anto (C)** *and* **→ Vicky (D)** |
+| 3 | `account.stage_changed`, `account.hot` | **Anto (C) → Vicky (D)** |
+| 4 | `crm.deal_closed_won/lost`, `icp.refresh_recommended` | **Vicky (D) → Surya (A)** (closes the flywheel) |
 
 A new field on a shared event = a PR to `lib/events/types.ts` tagging the affected
 owners (see the contract-change rule in [`ownership.md`](ownership.md)).
@@ -70,12 +71,12 @@ owners (see the contract-change rule in [`ownership.md`](ownership.md)).
 
 Even working in parallel, prioritise the path to a sellable product:
 
-1. **Milestone 1 — "ICP → tiered list in HubSpot" (Phases 1–3).** A builds 01→03,
-   B builds 04→05, and **D builds a thin CRM Sync (10) early** — out of its normal
-   order — because B's TAL write-back needs it. This is the one dependency that jumps
-   the sequence; flag it on day one.
-2. **Milestone 2 — "live signals → daily usage" (Phases 4–6).** C's whole band.
-3. **Milestone 3 — "automation + learning" (Phases 7–9).** D hardens CRM Sync, then
+1. **Milestone 1 — "ICP → tiered list in HubSpot" (Phases 1–3).** Surya builds 01→03,
+   Nethaji builds 04→05, and **Vicky builds a thin CRM Sync (10) early** — out of its
+   normal order — because Nethaji's TAL write-back needs it. This is the one dependency
+   that jumps the sequence; flag it on day one.
+2. **Milestone 2 — "live signals → daily usage" (Phases 4–6).** Anto's whole band.
+3. **Milestone 3 — "automation + learning" (Phases 7–9).** Vicky hardens CRM Sync, then
    builds the Orchestrator and Flywheel.
 
 ## Working rhythm
