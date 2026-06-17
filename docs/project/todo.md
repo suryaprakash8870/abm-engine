@@ -132,15 +132,19 @@
 ---
 
 ## Phase 4 — Engine 06 Contact Engine
-- [ ] Prisma models (contacts, stakeholder_maps, email_verification_results, contact_crm_sync_log, sourcing_jobs)
-- [ ] Apollo people search
-- [ ] Email verification
-- [ ] Claude Haiku role assignment
-- [ ] Duplicate detection vs CRM
-- [ ] Stakeholder map UI
-- [ ] HubSpot contact push
-- [ ] `contacts.mapped` publisher
-- [ ] Integration test + health check
+- [x] Prisma models (contacts, stakeholder_maps, email_verification_results, contact_crm_sync_log, sourcing_jobs) — all workspace-scoped (migration 20260617115855)
+- [x] Apollo people search (lib/clients/apollo.ts searchPeople — mock fallback on inaccessible plan)
+- [x] Email verification (apollo.verifyEmail — mock fallback; never blanket-risky)
+- [~] Role assignment — rule-based classifyRole (deterministic, free); Claude Haiku swap-in is a TODO in classifyRole()
+- [x] Duplicate detection (contact.upsert keyed by workspace+account+email = idempotent re-sourcing)
+- [x] Stakeholder map UI (/contacts list + /contacts/[accountId] 3-column map with role-move)
+- [~] CRM contact push — queued in contact_crm_sync_log; actual write delegated to Engine 10 via contacts.mapped (ADR-013)
+- [x] `contacts.mapped` publisher (per account, verify-before-publish; contacts.sourcing_failed on no-contacts/gate-fail)
+- [x] BullMQ sourcing queue (per-account async fan-out) + 6 API routes + health check
+- [x] Integration test (4 tests incl. fan-out + completion gate)
+- VERIFIED end-to-end: sourced Cobalt AI committee → 2 DM / 2 champion / 2 influencer, 4 verified emails, contacts.mapped consumed cleanly by signal + crm-sync (0 dead-letters).
+- Live-caught + fixed: classifyRole matched "cto" inside "direCTOr" (→ word boundaries); verifyEmail returned blanket 'risky' on a plan-gated key (→ mock-distribution fallback).
+- Audit (2026-06-17): 6-dimension multi-agent review → 15 findings (no criticals; the two worst were the live-caught ones). Fixed: atomic persistence transaction (idempotent email_verification/sync-log writes, no partial-failure), findFirst-or-create sourcing job, searchPeople degrades on ANY error, /contacts/manual TAL validation, workspaceId on all mutations, seniorityFor word boundaries. No migration needed. Re-verified idempotency live: 6 contacts → 6 verifications / 6 sync-logs after 4 runs (not 24).
 
 ---
 

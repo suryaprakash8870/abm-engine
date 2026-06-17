@@ -27,6 +27,7 @@ import type { EngineModule, HealthStatus } from '../contract';
 import { prisma } from '../../db/client';
 import { pingRedis } from '../../clients/redis';
 import { handleTalFinalized } from './handlers';
+import { startContactWorker } from './contact-queue';
 
 const SLUG: EngineSlug = 'contact-engine';
 const VERSION = '0.1.0';
@@ -43,6 +44,7 @@ export const engine = {
    */
   register(): void {
     subscribeToEvent(EVENTS.TAL_FINALIZED, handleTalFinalized, { engine: SLUG });
+    startContactWorker();
   },
 
   /**
