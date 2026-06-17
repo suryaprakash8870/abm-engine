@@ -41,6 +41,7 @@ import { withCapturedEvents } from '../../events';
 import { assertMatchesCatalog } from '../contract';
 import engine from './index';
 import { runTamBuild, icpToFilters, normalizeDomain, dedupeByDomain } from './service';
+import { mapCsvRowsToAccounts } from './csv';
 import type { ApolloCompany } from '../../clients/apollo';
 
 const company = (domain: string): ApolloCompany => ({ domain, name: domain, apolloId: domain, industry: null, employees: null, geography: null });
@@ -81,5 +82,18 @@ describe('tam-builder', () => {
     expect((done!.payload as { total_found: number }).total_found).toBe(2);
     expect((done!.payload as { account_ids: string[] }).account_ids).toHaveLength(2);
     expect(published.some((e) => e.type === 'tam.search_failed')).toBe(false);
+  });
+
+  it('mapCsvRowsToAccounts normalises domains, dedupes, and skips blanks', () => {
+    const rows = [
+      { Company: 'Acme', Website: 'https://www.acme.com/pricing' },
+      { Company: 'Acme Dup', Website: 'acme.com' },
+      { Company: 'Globex', Website: 'globex.com' },
+      { Company: 'NoDomain', Website: '' },
+    ];
+    const accounts = mapCsvRowsToAccounts(rows, { domain: 'Website', name: 'Company' });
+    expect(accounts).toHaveLength(2);
+    expect(accounts[0]).toMatchObject({ domain: 'acme.com', name: 'Acme' });
+    expect(accounts[1].domain).toBe('globex.com');
   });
 });

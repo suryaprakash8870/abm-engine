@@ -46,6 +46,11 @@ function TamSection({ icpId }: { icpId: string }) {
           <LinkButton href={`/accounts/${tam.job_id}`}>View account list →</LinkButton>
         </div>
       )}
+      <div className="pt-1">
+        <a href={`/tam/upload?icp=${icpId}`} className="text-xs text-gray-500 underline hover:text-gray-700">
+          or upload your own company list (CSV)
+        </a>
+      </div>
     </Card>
   );
 }

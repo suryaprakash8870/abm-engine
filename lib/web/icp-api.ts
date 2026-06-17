@@ -113,3 +113,14 @@ export interface EnrichmentResult {
 /** Enriched + qualified accounts for a TAM build (keyed by the TAM job id). */
 export const getEnrichmentAccounts = (sourceJobId: string) =>
   call<EnrichmentResult>(`/api/v1/enrichment/accounts/${sourceJobId}`);
+
+/** Upload a company list (CSV parsed client-side) as a TAM build for an ICP. */
+export const uploadCsvAccounts = (
+  icpId: string,
+  rows: Record<string, string>[],
+  fieldMapping: { domain: string; name?: string },
+) =>
+  call<{ job_id: string; total: number }>('/api/v1/tam/upload', {
+    method: 'POST',
+    body: JSON.stringify({ icp_id: icpId, rows, field_mapping: fieldMapping }),
+  });

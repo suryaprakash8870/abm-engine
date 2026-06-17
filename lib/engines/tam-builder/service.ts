@@ -15,6 +15,7 @@ import { searchCompanies, type ApolloSearchParams, type ApolloCompany } from '..
 import type { IcpCreatedPayload } from '../../events';
 import { completionCheck } from './validation';
 import { publishTamSearchCompleted, publishTamSearchFailed } from './publisher';
+import type { CsvAccount } from './csv';
 
 const PER_PAGE = 25;
 const MAX_PAGES = 400; // safety cap
@@ -149,6 +150,56 @@ export async function runTamBuild(input: TamBuildInput): Promise<{ accountIds: s
     await failJob(input, reason, 0);
     return null;
   }
+}
+
+/**
+ * Ingest a user-uploaded company list (CSV) as a TAM build. No Apollo search —
+ * the accounts are provided — so this persists + publishes inline (fast). The
+ * accounts flow through the same enrichment pipeline (source: csv_upload).
+ */
+export async function ingestCsvAccounts(input: {
+  workspaceId: string;
+  icpId: string;
+  accounts: CsvAccount[];
+  correlationId: string;
+}): Promise<{ jobId: string; total: number }> {
+  const ctx = { workspaceId: input.workspaceId, correlationId: input.correlationId };
+  const seen = new Set<string>();
+  const deduped = input.accounts
+    .map((a) => ({ domain: normalizeDomain(a.domain), name: a.name }))
+    .filter((a) => a.domain && !seen.has(a.domain) && seen.add(a.domain));
+  const domains = deduped.map((a) => a.domain);
+
+  const job = await prisma.tamBuildJob.create({
+    data: { workspaceId: input.workspaceId, icpId: input.icpId, status: 'running', accountLimit: domains.length, filters: { source: 'csv' } },
+  });
+
+  await prisma.rawAccount.createMany({
+    data: deduped.map((a) => ({ workspaceId: input.workspaceId, jobId: job.id, domain: a.domain, name: a.name, source: 'csv_upload' })),
+    skipDuplicates: true,
+  });
+  const rows = await prisma.rawAccount.findMany({
+    where: { workspaceId: input.workspaceId, domain: { in: domains } },
+    select: { id: true, domain: true, name: true },
+  });
+
+  await prisma.tamBuildJob.update({
+    where: { id: job.id },
+    data: { status: 'completed', totalFound: domains.length, processed: domains.length, completedAt: new Date() },
+  });
+  await publishTamSearchCompleted(
+    {
+      job_id: job.id,
+      icp_id: input.icpId,
+      account_ids: rows.map((r) => r.id),
+      accounts: rows.map((r) => ({ id: r.id, domain: r.domain, name: r.name })),
+      total_found: domains.length,
+      account_limit: domains.length,
+      source_breakdown: { apollo: 0, csv_upload: domains.length },
+    },
+    ctx,
+  );
+  return { jobId: job.id, total: domains.length };
 }
 
 async function failJob(input: TamBuildInput, reason: string, lastPage: number): Promise<void> {
