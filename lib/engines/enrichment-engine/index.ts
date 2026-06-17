@@ -14,6 +14,7 @@ import { subscribeToEvent } from '../../events';
 import { prisma } from '../../db/client';
 import { pingRedis } from '../../clients/redis';
 import { handleTamSearchCompleted, handleIcpCreated } from './handlers';
+import { startEnrichmentWorker } from './enrich-queue';
 
 const SLUG = 'enrichment-engine' as const;
 const VERSION = '0.1.0';
@@ -33,6 +34,7 @@ export const engine = {
   register(): void {
     subscribeToEvent('tam.search_completed', handleTamSearchCompleted, { engine: SLUG });
     subscribeToEvent('icp.created', handleIcpCreated, { engine: SLUG });
+    startEnrichmentWorker();
   },
 
   /**

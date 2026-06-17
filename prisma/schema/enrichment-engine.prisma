@@ -1,77 +1,102 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Engine 03 — Enrichment Engine — owned by <unassigned>
+// Engine 03 — Enrichment Engine · owned by Surya (Member A)
 //
-// Tables this engine owns (no other engine queries them directly — they listen
-// to this engine's events and keep local copies). The stubs below are
-// COMMENTED-OUT so this file is valid-but-empty until the owner fills them in.
+// Enriches raw accounts + AI-qualifies them against the ICP. enrichment_cache is
+// the ONE shared, cross-workspace table (public company data; domain PK; no
+// workspace_id) — the primary cost-control mechanism. Everything else is
+// workspace-scoped.
 //
-// TODO(owner): define models + add workspaceId + RLS (Supabase policy per table).
-//
-// CLAUDE.md rule: the shared `enrichment_cache` is the ONLY table without
-// workspaceId and the ONLY table read across workspaces — written ONLY here.
+// See docs/engines/engine-03-enrichment-engine.md.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// model EnrichmentJob {
-//   id          String    @id @default(cuid())
-//   workspaceId String    @map("workspace_id")
-//   sourceJobId String    @map("source_job_id") // the tam_build_jobs id that triggered enrichment
-//   status      String
-//   total       Int
-//   enriched    Int
-//   failed      Int
-//   startedAt   DateTime  @default(now()) @map("started_at")
-//
-//   @@map("enrichment_jobs")
-// }
+model EnrichmentJob {
+  id                String    @id @default(cuid())
+  workspaceId       String    @map("workspace_id")
+  sourceJobId       String    @map("source_job_id") // the tam_build_jobs id
+  icpId             String    @map("icp_id")
+  status            String    @default("running") // running | completed | failed
+  total             Int       @default(0)
+  enriched          Int       @default(0)
+  failed            Int       @default(0)
+  qualifiedCount    Int       @default(0) @map("qualified_count")
+  disqualifiedCount Int       @default(0) @map("disqualified_count")
+  error             String?
+  startedAt         DateTime  @default(now()) @map("started_at")
+  completedAt       DateTime? @map("completed_at")
 
-// model EnrichedAccount {
-//   id                String   @id @default(cuid())
-//   workspaceId       String   @map("workspace_id")
-//   domain            String
-//   name              String?
-//   industry          String?
-//   headcount         Int?
-//   revenue           BigInt?
-//   geography         String?
-//   fundingStage      String?  @map("funding_stage")
-//   techStack         String[] @map("tech_stack")
-//   dataQualityScore  Float    @map("data_quality_score")
-//   enrichedAt        DateTime @default(now()) @map("enriched_at")
-//   enrichmentSources String[] @map("enrichment_sources")
-//
-//   @@map("enriched_accounts")
-// }
+  @@index([workspaceId])
+  @@index([sourceJobId])
+  @@map("enrichment_jobs")
+}
 
-// model QualificationResult {
-//   id                   String   @id @default(cuid())
-//   accountId            String   @map("account_id")
-//   qualified            Boolean
-//   confidence           Float
-//   reason               String
-//   disqualifyingFactors String[] @map("disqualifying_factors")
-//
-//   @@map("qualification_results")
-// }
+model EnrichedAccount {
+  id                String   @id @default(cuid())
+  workspaceId       String   @map("workspace_id")
+  jobId             String   @map("job_id") // enrichment_jobs id
+  accountId         String   @map("account_id") // raw_account id from TAM
+  domain            String
+  name              String
+  industry          String?
+  headcount         Int?
+  revenue           String?
+  geography         String?
+  fundingStage      String?  @map("funding_stage")
+  techStack         String[] @map("tech_stack")
+  dataQualityScore  Float?   @map("data_quality_score")
+  enrichmentSources String[] @map("enrichment_sources")
+  enrichedAt        DateTime @default(now()) @map("enriched_at")
 
-// model PromptVersion {
-//   id            String   @id @default(cuid())
-//   promptKey     String   @map("prompt_key")
-//   version       Int
-//   content       String
-//   accuracyScore Float?   @map("accuracy_score")
-//   createdAt     DateTime @default(now()) @map("created_at")
-//
-//   @@map("prompt_versions")
-// }
+  @@unique([workspaceId, accountId])
+  @@index([jobId])
+  @@map("enriched_accounts")
+}
 
-// SHARED across workspaces — no workspaceId. Written ONLY by this engine.
-// model EnrichmentCache {
-//   domain                  String   @id
-//   firmographics           Json?
-//   technographics          Json?
-//   enrichedAt              DateTime @default(now()) @map("enriched_at")
-//   firmographicExpiresAt   DateTime @map("firmographic_expires_at")  // 30-day firmographic TTL
-//   technographicExpiresAt  DateTime @map("technographic_expires_at") // 90-day technographic TTL
-//
-//   @@map("enrichment_cache")
-// }
+model QualificationResult {
+  id                   String   @id @default(cuid())
+  accountId            String   @unique @map("account_id")
+  qualified            Boolean
+  confidence           Float
+  reason               String?
+  disqualifyingFactors String[] @map("disqualifying_factors")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@map("qualification_results")
+}
+
+model PromptVersion {
+  id            String   @id @default(cuid())
+  promptKey     String   @map("prompt_key")
+  version       Int
+  content       String
+  accuracyScore Float?   @map("accuracy_score")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("prompt_versions")
+}
+
+// Shared across workspaces (public company data). Written only by this engine.
+model EnrichmentCache {
+  domain                 String   @id
+  firmographics          Json
+  technographics         Json
+  enrichedAt             DateTime @default(now()) @map("enriched_at")
+  firmographicExpiresAt  DateTime @map("firmographic_expires_at")
+  technographicExpiresAt DateTime @map("technographic_expires_at")
+
+  @@map("enrichment_cache")
+}
+
+// Local copy of the ICP (kept from icp.created) so qualification needs no cross-engine query.
+model EnrichmentIcpSnapshot {
+  id             String   @id @default(cuid())
+  workspaceId    String   @map("workspace_id")
+  icpId          String   @unique @map("icp_id")
+  firmographics  Json
+  technographics Json
+  signals        Json
+  exclusions     Json
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([workspaceId])
+  @@map("enrichment_icp_snapshots")
+}

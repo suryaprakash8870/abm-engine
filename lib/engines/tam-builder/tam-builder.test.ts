@@ -28,7 +28,10 @@ vi.mock('../../db/client', () => ({
     searchParamsLog: { create: async () => ({}) },
     rawAccount: {
       createMany: async () => ({ count: 2 }),
-      findMany: async () => [{ id: 'acc_acme' }, { id: 'acc_globex' }],
+      findMany: async () => [
+        { id: 'acc_acme', domain: 'acme.com', name: 'Acme' },
+        { id: 'acc_globex', domain: 'globex.com', name: 'Globex' },
+      ],
     },
     tamBuildJob: { create: async () => ({ id: 'job_1' }), update: async () => ({}), findFirst: async () => null },
   },

@@ -106,10 +106,10 @@ export async function runTamBuild(input: TamBuildInput): Promise<{ accountIds: s
       skipDuplicates: true,
     });
 
-    // 4. Resolve account ids for the whole deduped set (incl. domains already present).
+    // 4. Resolve account refs for the whole deduped set (incl. domains already present).
     const rows = await prisma.rawAccount.findMany({
       where: { workspaceId: input.workspaceId, domain: { in: domains } },
-      select: { id: true },
+      select: { id: true, domain: true, name: true },
     });
     const accountIds = rows.map((r) => r.id);
 
@@ -136,6 +136,7 @@ export async function runTamBuild(input: TamBuildInput): Promise<{ accountIds: s
         job_id: input.jobId,
         icp_id: input.icpId,
         account_ids: accountIds,
+        accounts: rows.map((r) => ({ id: r.id, domain: r.domain, name: r.name })),
         total_found: domains.length,
         account_limit: input.accountLimit,
         source_breakdown: { apollo: domains.length, csv_upload: 0 },

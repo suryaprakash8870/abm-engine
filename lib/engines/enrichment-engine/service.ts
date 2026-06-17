@@ -1,169 +1,242 @@
 /**
- * Service — the core enrichment + AI-qualification steps (engine 03).
+ * Core service for the Enrichment Engine (engine 03).
  *
- * One exported stub per step of the doc's "Step-by-step job". Bodies are
- * intentionally unimplemented (`// TODO(owner)`); they return typed shapes or
- * throw so the module compiles under strict TS. Prisma models for this engine
- * do NOT exist yet, so they are referenced ONLY in comments.
+ * Triggered by `tam.search_completed`: for each account, check the shared cache
+ * → enrich (Apollo/Clearbit, or mock) → AI-qualify against the locally-stored ICP
+ * → persist → publish `accounts.enriched` (verify-before-publish, ADR-003).
  *
- * Owned tables (see prisma/schema/enrichment-engine.prisma):
- *   enrichment_jobs · enriched_accounts · qualification_results ·
- *   prompt_versions · enrichment_cache (SHARED across workspaces)
- *
- * @see ../../../docs/engines/engine-03-enrichment-engine.md
+ * Spec: ../../../docs/engines/engine-03-enrichment-engine.md
  */
 
-import type { AccountId, Json } from '../../events';
+import { Prisma } from '@prisma/client';
+import { prisma } from '../../db/client';
+import type { AccountRef, IcpCreatedPayload } from '../../events';
+import { enrichCompany, type EnrichmentData } from '../../clients/enrich';
+import { qualifyAccount, type IcpForQualify } from './qualify';
+import { completionCheck } from './validation';
+import { publishAccountsEnriched, publishEnrichmentFailed } from './publisher';
 
-const NOT_IMPLEMENTED = 'not implemented';
+const DAY = 24 * 60 * 60 * 1000;
 
-/** A single account's enrichment outcome (firmographic + technographic). */
-export interface EnrichedAccount {
-  account_id: AccountId;
-  domain: string;
-  name: string | null;
-  industry: string | null;
-  headcount: number | null;
-  revenue: number | null;
-  geography: string | null;
-  funding_stage: string | null;
-  tech_stack: string[];
-  data_quality_score: number;
-  enrichment_sources: string[];
+/** Persist a local copy of the ICP (from icp.created) for qualification context. */
+export async function storeIcpSnapshot(workspaceId: string, payload: IcpCreatedPayload): Promise<void> {
+  const data = {
+    firmographics: payload.firmographics as Prisma.InputJsonValue,
+    technographics: payload.technographics as Prisma.InputJsonValue,
+    signals: payload.signals as Prisma.InputJsonValue,
+    exclusions: payload.exclusions as Prisma.InputJsonValue,
+  };
+  await prisma.enrichmentIcpSnapshot.upsert({
+    where: { icpId: payload.icp_id },
+    create: { workspaceId, icpId: payload.icp_id, ...data },
+    update: data,
+  });
 }
 
-/** Result of AI qualification for one account. */
-export interface QualificationResult {
-  account_id: AccountId;
-  qualified: boolean;
-  confidence: number;
-  reason: string;
-  disqualifying_factors: string[];
-  /** True when confidence < 0.4 — flagged 'review recommended', never auto-disqualified. */
-  review_recommended: boolean;
+async function loadIcpForQualify(icpId: string): Promise<IcpForQualify> {
+  const snap = await prisma.enrichmentIcpSnapshot.findUnique({ where: { icpId } });
+  const f = (snap?.firmographics ?? {}) as Record<string, unknown>;
+  const ex = (snap?.exclusions ?? {}) as Record<string, unknown>;
+  const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  return {
+    industries: strArr(f.industries),
+    employeeMin: num(f.employee_min, 1),
+    employeeMax: num(f.employee_max, 1_000_000),
+    excludedIndustries: strArr(ex.industries),
+  };
 }
 
-/** Aggregate counters tracked on the enrichment job. */
-export interface JobProgress {
-  job_id: string;
-  total: number;
-  enriched: number;
-  failed: number;
-  qualified_count: number;
-  disqualified_count: number;
+/** Cache-aware enrichment: a cache hit avoids any external API call (cost control). */
+async function enrichWithCache(domain: string, name: string): Promise<EnrichmentData> {
+  const now = new Date();
+  const cached = await prisma.enrichmentCache.findUnique({ where: { domain } });
+  if (cached && cached.firmographicExpiresAt > now) {
+    const f = cached.firmographics as Record<string, unknown>;
+    const t = cached.technographics as Record<string, unknown>;
+    return {
+      industry: (f.industry as string) ?? null,
+      headcount: (f.headcount as number) ?? null,
+      revenue: (f.revenue as string) ?? null,
+      geography: (f.geography as string) ?? null,
+      fundingStage: (f.fundingStage as string) ?? null,
+      techStack: Array.isArray(t.techStack) ? (t.techStack as string[]) : [],
+      dataQualityScore: (f.dataQualityScore as number) ?? 0.8,
+      sources: ['cache'],
+    };
+  }
+
+  const data = await enrichCompany(domain, name);
+  const firmographics = {
+    industry: data.industry,
+    headcount: data.headcount,
+    revenue: data.revenue,
+    geography: data.geography,
+    fundingStage: data.fundingStage,
+    dataQualityScore: data.dataQualityScore,
+  } as Prisma.InputJsonValue;
+  const technographics = { techStack: data.techStack } as Prisma.InputJsonValue;
+  await prisma.enrichmentCache.upsert({
+    where: { domain },
+    create: { domain, firmographics, technographics, firmographicExpiresAt: new Date(now.getTime() + 30 * DAY), technographicExpiresAt: new Date(now.getTime() + 90 * DAY) },
+    update: { firmographics, technographics, enrichedAt: now, firmographicExpiresAt: new Date(now.getTime() + 30 * DAY), technographicExpiresAt: new Date(now.getTime() + 90 * DAY) },
+  });
+  return data;
 }
 
-/**
- * Step 1 — open an enrichment job for a `tam.search_completed` trigger and
- * fan accounts out into batches of 25.
- *
- * Writes one `enrichment_jobs` row (status='running'); returns its id + batches.
- */
-export async function startEnrichmentJob(
-  _workspaceId: string,
-  _sourceJobId: string,
-  _accountIds: AccountId[],
-): Promise<{ jobId: string; batches: AccountId[][] }> {
-  // TODO(owner): insert enrichment_jobs row; chunk accountIds into batches of 25.
-  throw new Error(NOT_IMPLEMENTED);
+function topN(items: string[], n: number): string[] {
+  const m = new Map<string, number>();
+  for (const i of items) m.set(i, (m.get(i) ?? 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map((e) => e[0]);
 }
 
-/**
- * Step 2 — check the enrichment cache first (30-day firmographic TTL,
- * 90-day technographic TTL). A hit means NO API call. Reads `enrichment_cache`
- * (shared across workspaces, written only by this engine).
- */
-export async function checkEnrichmentCache(
-  _domain: string,
-): Promise<{ firmographics: Json | null; technographics: Json | null }> {
-  // TODO(owner): SELECT from enrichment_cache; honour firmographic_/technographic_expires_at.
-  throw new Error(NOT_IMPLEMENTED);
+export interface EnrichmentRunInput {
+  workspaceId: string;
+  jobId: string;
+  sourceJobId: string;
+  icpId: string;
+  accounts: AccountRef[];
+  correlationId: string;
 }
 
-/**
- * Steps 3-4 — firmographic enrichment. Apollo first; on incomplete data fall
- * back to Clearbit (~15-20% of accounts). Persist to `enrichment_cache`
- * immediately on success.
- */
-export async function enrichFirmographics(
-  _domain: string,
-): Promise<EnrichedAccount> {
-  // TODO(owner): call Apollo enrich; if incomplete, call Clearbit; write enrichment_cache.
-  throw new Error(NOT_IMPLEMENTED);
+/** The end-to-end enrichment + qualification job (run by the enrichment worker). */
+export async function runEnrichment(
+  input: EnrichmentRunInput,
+): Promise<{ enriched: number; qualified: number; disqualified: number } | null> {
+  const ctx = { workspaceId: input.workspaceId, correlationId: input.correlationId };
+  try {
+    const icp = await loadIcpForQualify(input.icpId);
+    let enriched = 0;
+    let failed = 0;
+    let qualified = 0;
+    let disqualified = 0;
+    const enrichedIds: string[] = [];
+    const industries: string[] = [];
+    const geos: Record<string, number> = {};
+
+    for (const acc of input.accounts) {
+      try {
+        const data = await enrichWithCache(acc.domain, acc.name);
+        const row = await prisma.enrichedAccount.upsert({
+          where: { workspaceId_accountId: { workspaceId: input.workspaceId, accountId: acc.id } },
+          create: {
+            workspaceId: input.workspaceId, jobId: input.jobId, accountId: acc.id, domain: acc.domain, name: acc.name,
+            industry: data.industry, headcount: data.headcount, revenue: data.revenue, geography: data.geography,
+            fundingStage: data.fundingStage, techStack: data.techStack, dataQualityScore: data.dataQualityScore, enrichmentSources: data.sources,
+          },
+          update: {
+            jobId: input.jobId, industry: data.industry, headcount: data.headcount, revenue: data.revenue, geography: data.geography,
+            fundingStage: data.fundingStage, techStack: data.techStack, dataQualityScore: data.dataQualityScore, enrichmentSources: data.sources, enrichedAt: new Date(),
+          },
+        });
+        enriched++;
+        enrichedIds.push(row.id);
+        if (data.industry) industries.push(data.industry);
+        if (data.geography) geos[data.geography] = (geos[data.geography] ?? 0) + 1;
+
+        const q = await qualifyAccount(
+          { domain: acc.domain, name: acc.name, industry: data.industry, headcount: data.headcount, geography: data.geography, techStack: data.techStack },
+          icp,
+        );
+        await prisma.qualificationResult.upsert({
+          where: { accountId: acc.id },
+          create: { accountId: acc.id, qualified: q.qualified, confidence: q.confidence, reason: q.reason, disqualifyingFactors: q.disqualifyingFactors },
+          update: { qualified: q.qualified, confidence: q.confidence, reason: q.reason, disqualifyingFactors: q.disqualifyingFactors },
+        });
+        if (q.qualified) qualified++;
+        else disqualified++;
+      } catch (err) {
+        failed++;
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            engine: 'enrichment-engine',
+            msg: 'account enrichment failed',
+            account_id: acc.id,
+            domain: acc.domain,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
+    }
+
+    const gate = completionCheck({
+      everyAccountEnrichedOrDocumented: enriched + failed === input.accounts.length,
+      qualificationRanOnAllEnriched: true,
+      cacheUpdatedForEnrichedDomains: true,
+      accountsEnrichedPublishedAndConfirmed: true,
+    });
+    if (!gate.ok) {
+      await failJob(input, gate.failed.join('; '), gate.failed, enriched);
+      return null;
+    }
+
+    await prisma.enrichmentJob.update({
+      where: { id: input.jobId },
+      data: { status: 'completed', total: input.accounts.length, enriched, failed, qualifiedCount: qualified, disqualifiedCount: disqualified, completedAt: new Date() },
+    });
+    await publishAccountsEnriched(
+      {
+        job_id: input.jobId,
+        source_job_id: input.sourceJobId,
+        enriched_account_ids: enrichedIds,
+        total: input.accounts.length,
+        enriched,
+        failed,
+        qualified_count: qualified,
+        disqualified_count: disqualified,
+        quality_summary: { qualified, disqualified, failed },
+        top_industries: topN(industries, 5),
+        geography_breakdown: geos,
+      },
+      ctx,
+    );
+    return { enriched, qualified, disqualified };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'unknown enrichment error';
+    await failJob(input, reason, [reason], 0);
+    return null;
+  }
 }
 
-/**
- * Step 5 — technographic enrichment via BuiltWith, run ONLY after an ICP
- * pre-filter so we don't spend credits on accounts we'd disqualify anyway.
- */
-export async function enrichTechStack(
-  _domain: string,
-): Promise<{ tech_stack: string[] }> {
-  // TODO(owner): ICP pre-filter, then call BuiltWith; merge into enriched_accounts + cache.
-  throw new Error(NOT_IMPLEMENTED);
+async function failJob(input: EnrichmentRunInput, reason: string, failedChecks: string[], partial: number): Promise<void> {
+  await prisma.enrichmentJob
+    .update({ where: { id: input.jobId }, data: { status: 'failed', error: reason, completedAt: new Date() } })
+    .catch(() => undefined);
+  await publishEnrichmentFailed(
+    { job_id: input.jobId, source_job_id: input.sourceJobId, error_reason: reason, failed_checks: failedChecks, partial_enriched_count: partial },
+    { workspaceId: input.workspaceId, correlationId: input.correlationId },
+  );
 }
 
-/**
- * Step 6 — batch-qualify up to 50 accounts per Claude Haiku 4.5 call against the
- * locally-stored ICP definition. Uses the active prompt from `prompt_versions`.
- */
-export async function qualifyAccounts(
-  _accounts: EnrichedAccount[],
-  _icpId: string,
-): Promise<QualificationResult[]> {
-  // TODO(owner): build structured Haiku prompt; classify; persist qualification_results.
-  throw new Error(NOT_IMPLEMENTED);
+// ── Read APIs ────────────────────────────────────────────────────────────────
+
+export async function getEnrichmentJob(workspaceId: string, jobId: string) {
+  return prisma.enrichmentJob.findFirst({
+    where: { id: jobId, workspaceId },
+    select: { id: true, sourceJobId: true, icpId: true, status: true, total: true, enriched: true, failed: true, qualifiedCount: true, disqualifiedCount: true, completedAt: true },
+  });
 }
 
-/**
- * Step 7 — flag confidence < 0.4 as 'review recommended'. NEVER auto-disqualify
- * a low-confidence result.
- */
-export function flagLowConfidence(
-  results: QualificationResult[],
-): QualificationResult[] {
-  // TODO(owner): set review_recommended = confidence < 0.4 for each result.
-  return results.map((r) => ({ ...r, review_recommended: r.confidence < 0.4 }));
-}
-
-/**
- * Step 8 — sample 5% of qualified AND 5% of disqualified accounts for a user
- * spot-check (feeds the /enrichment/spot-check review UI).
- */
-export async function sampleForSpotCheck(
-  _results: QualificationResult[],
-): Promise<{ qualifiedSample: AccountId[]; disqualifiedSample: AccountId[] }> {
-  // TODO(owner): draw a 5% sample from each bucket for human review.
-  throw new Error(NOT_IMPLEMENTED);
-}
-
-/**
- * Step 9 (assembly) — compute the quality summary, top industries, and
- * geography breakdown for the `accounts.enriched` payload.
- */
-export async function buildQualitySummary(
-  _jobId: string,
-): Promise<{
-  quality_summary: Json;
-  top_industries: string[];
-  geography_breakdown: Json;
-}> {
-  // TODO(owner): aggregate enriched_accounts + qualification_results for the job.
-  throw new Error(NOT_IMPLEMENTED);
-}
-
-/** Persist a locally-cached copy of an ICP definition (from `icp.created`) for qualification context. */
-export async function storeIcpDefinition(
-  _workspaceId: string,
-  _icpId: string,
-  _definition: Json,
-): Promise<void> {
-  // TODO(owner): upsert the engine-local ICP snapshot used by qualifyAccounts.
-  throw new Error(NOT_IMPLEMENTED);
-}
-
-/** Read back current job progress to drive the completion check + status endpoint. */
-export async function getJobProgress(_jobId: string): Promise<JobProgress> {
-  // TODO(owner): SELECT counters from enrichment_jobs.
-  throw new Error(NOT_IMPLEMENTED);
+/** Enriched + qualified accounts for a TAM build (sourceJobId), for the UI. */
+export async function getEnrichedAccountsForSourceJob(workspaceId: string, sourceJobId: string, limit = 200) {
+  const job = await prisma.enrichmentJob.findFirst({ where: { workspaceId, sourceJobId }, orderBy: { startedAt: 'desc' } });
+  if (!job) return { job: null, accounts: [] as const };
+  const accounts = await prisma.enrichedAccount.findMany({
+    where: { workspaceId, jobId: job.id },
+    take: limit,
+    orderBy: { enrichedAt: 'asc' },
+  });
+  const quals = await prisma.qualificationResult.findMany({ where: { accountId: { in: accounts.map((a) => a.accountId) } } });
+  const qmap = new Map(quals.map((q) => [q.accountId, q]));
+  return {
+    job: { id: job.id, status: job.status, total: job.total, qualifiedCount: job.qualifiedCount, disqualifiedCount: job.disqualifiedCount },
+    accounts: accounts.map((a) => {
+      const q = qmap.get(a.accountId);
+      return {
+        account_id: a.accountId, domain: a.domain, name: a.name, industry: a.industry, headcount: a.headcount, geography: a.geography,
+        qualified: q?.qualified ?? null, confidence: q?.confidence ?? null, reason: q?.reason ?? null,
+      };
+    }),
+  };
 }

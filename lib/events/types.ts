@@ -95,10 +95,19 @@ export interface IcpErrorPayload {
 // 02 TAM Builder
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** A minimal account reference carried in events so downstream engines need not query TAM. */
+export interface AccountRef {
+  id: string;
+  domain: string;
+  name: string;
+}
+
 export interface TamSearchCompletedPayload {
   job_id: string;
   icp_id: string;
   account_ids: AccountId[];
+  /** id + domain + name for each account, so Enrichment (03) can enrich without a cross-engine query. */
+  accounts: AccountRef[];
   total_found: number;
   account_limit: number;
   source_breakdown: Json; // { apollo: number, csv_upload: number, ... }

@@ -90,3 +90,26 @@ export interface RawAccountRow {
 
 export const getTamAccounts = (jobId: string) =>
   call<{ count: number; accounts: RawAccountRow[] }>(`/api/v1/tam/accounts/${jobId}`);
+
+// ── Engine 03 (Enrichment) ───────────────────────────────────────────────────
+
+export interface EnrichedAccountRow {
+  account_id: string;
+  domain: string;
+  name: string;
+  industry: string | null;
+  headcount: number | null;
+  geography: string | null;
+  qualified: boolean | null;
+  confidence: number | null;
+  reason: string | null;
+}
+
+export interface EnrichmentResult {
+  job: { id: string; status: string; total: number; qualifiedCount: number; disqualifiedCount: number } | null;
+  accounts: EnrichedAccountRow[];
+}
+
+/** Enriched + qualified accounts for a TAM build (keyed by the TAM job id). */
+export const getEnrichmentAccounts = (sourceJobId: string) =>
+  call<EnrichmentResult>(`/api/v1/enrichment/accounts/${sourceJobId}`);

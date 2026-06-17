@@ -1,67 +1,77 @@
 /**
- * Integration test for engine 03 (Enrichment Engine).
- *
- * Per conventions.md every engine ships ONE integration test: feed a known input
- * event, assert the correct output event. Deeper behavioural assertions are left
- * as // TODO(owner) until the core logic lands.
+ * Tests for the Enrichment Engine (engine 03).
+ *  - catalog match
+ *  - qualifyRuleBased (fit + exclusion)
+ *  - runEnrichment: enrich + qualify → accounts.enriched with the right counts
+ *    (enrich client + DB mocked)
  */
 
-import { describe, it, expect } from 'vitest';
-import engine from './index';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../../clients/enrich', () => ({
+  enrichCompany: async (domain: string) =>
+    domain === 'gov.com'
+      ? { industry: 'Government', headcount: 5000, revenue: '$50M', geography: 'EU', fundingStage: 'Public', techStack: ['SAP'], dataQualityScore: 0.9, sources: ['mock'] }
+      : { industry: 'Software', headcount: 200, revenue: '$10M', geography: 'US', fundingStage: 'Series B', techStack: ['AWS'], dataQualityScore: 0.85, sources: ['mock'] },
+}));
+
+vi.mock('../../db/client', () => ({
+  prisma: {
+    enrichmentIcpSnapshot: {
+      findUnique: async () => ({
+        firmographics: { industries: ['Software'], employee_min: 50, employee_max: 500 },
+        technographics: {},
+        signals: {},
+        exclusions: { industries: ['Government'] },
+      }),
+      upsert: async () => ({}),
+    },
+    enrichmentCache: { findUnique: async () => null, upsert: async () => ({}) },
+    enrichedAccount: { upsert: async (args: { create: { accountId: string } }) => ({ id: `ea_${args.create.accountId}` }) },
+    qualificationResult: { upsert: async () => ({}) },
+    enrichmentJob: { create: async () => ({ id: 'ej_1' }), update: async () => ({}), findFirst: async () => null },
+  },
+}));
+
+import { withCapturedEvents } from '../../events';
 import { assertMatchesCatalog } from '../contract';
-import { fakeEvent, withCapturedEvents } from '../../events';
-import type { AccountsEnrichedPayload } from '../../events';
-import { handleTamSearchCompleted } from './handlers';
-import { publishAccountsEnriched } from './publisher';
+import engine from './index';
+import { runEnrichment } from './service';
+import { qualifyRuleBased } from './qualify';
+
+const icp = { industries: ['Software'], employeeMin: 50, employeeMax: 500, excludedIndustries: ['Government'] };
 
 describe('enrichment-engine', () => {
-  it('matches the frozen event catalog', () => {
-    // Test 1: declared consumes/publishes must line up with the catalog routing.
+  it('matches the event catalog', () => {
     expect(() => assertMatchesCatalog(engine)).not.toThrow();
   });
 
-  it('publishes accounts.enriched for a tam.search_completed trigger', async () => {
-    // Test 2: feed the consumed trigger through the handler (it must not throw on
-    // a valid payload), then verify the success output event is captured.
-    const trigger = fakeEvent('tam.search_completed', {
-      job_id: 'job_123',
-      icp_id: 'icp_123',
-      account_ids: ['acc_1', 'acc_2'],
-      total_found: 2,
-      account_limit: 1000,
-      source_breakdown: { apollo: 2 },
-    });
+  it('qualifyRuleBased qualifies a fitting account', () => {
+    const r = qualifyRuleBased({ domain: 'a.com', name: 'A', industry: 'Software', headcount: 200, geography: 'US', techStack: [] }, icp);
+    expect(r.qualified).toBe(true);
+    expect(r.confidence).toBe(1);
+  });
 
+  it('qualifyRuleBased disqualifies an excluded industry', () => {
+    const r = qualifyRuleBased({ domain: 'g.com', name: 'G', industry: 'Government', headcount: 5000, geography: 'EU', techStack: [] }, icp);
+    expect(r.qualified).toBe(false);
+    expect(r.disqualifyingFactors.length).toBeGreaterThan(0);
+  });
+
+  it('runEnrichment enriches, qualifies, and publishes accounts.enriched', async () => {
     const published = await withCapturedEvents(async () => {
-      // Handler accepts the valid trigger without throwing.
-      await handleTamSearchCompleted(trigger);
-
-      // The core pipeline is still a stub (// TODO(owner)). Once it runs the
-      // step-by-step job and passes completionCheck, the handler itself will
-      // publish this. For now we exercise the publish path directly so the test
-      // asserts the contract output type. TODO(owner): drive this through the
-      // handler end-to-end and assert the real quality_summary fields.
-      const payload: AccountsEnrichedPayload = {
-        job_id: 'job_123',
-        source_job_id: 'job_123',
-        enriched_account_ids: ['acc_1', 'acc_2'],
-        total: 2,
-        enriched: 2,
-        failed: 0,
-        qualified_count: 2,
-        disqualified_count: 0,
-        quality_summary: {},
-        top_industries: [],
-        geography_breakdown: {},
-      };
-      await publishAccountsEnriched(payload, {
-        workspaceId: trigger.workspace_id,
-        correlationId: trigger.correlation_id,
+      await runEnrichment({
+        workspaceId: 'ws_1', jobId: 'ej_1', sourceJobId: 'tam_1', icpId: 'icp_1',
+        accounts: [{ id: 'a1', domain: 'acme.com', name: 'Acme' }, { id: 'a2', domain: 'gov.com', name: 'Gov' }],
+        correlationId: 'corr_1',
       });
     });
-
-    expect(published).toContainEqual(
-      expect.objectContaining({ type: 'accounts.enriched' }),
-    );
+    const enriched = published.find((e) => e.type === 'accounts.enriched');
+    expect(enriched).toBeDefined();
+    const p = enriched!.payload as { enriched: number; qualified_count: number; disqualified_count: number };
+    expect(p.enriched).toBe(2);
+    expect(p.qualified_count).toBe(1);
+    expect(p.disqualified_count).toBe(1);
+    expect(published.some((e) => e.type === 'enrichment.failed')).toBe(false);
   });
 });
