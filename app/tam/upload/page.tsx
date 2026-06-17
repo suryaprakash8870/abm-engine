@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card, PrimaryButton, Banner, LinkButton } from '../../icp/ui';
+import { Card, PrimaryButton, Banner, LinkButton, inputClass, selectClass } from '../../icp/ui';
 import { uploadCsvAccounts } from '@/lib/web/icp-api';
 
 function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[] } {
@@ -78,8 +78,8 @@ export default function CsvUploadPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Upload your company list</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <h1 className="font-display text-2xl font-medium text-white">Upload your company list</h1>
+        <p className="mt-1 text-sm text-white/55">
           Export companies from Apollo (or any source) as CSV and upload here — they flow through the same
           enrichment + qualification as Apollo-sourced accounts.
         </p>
@@ -90,22 +90,22 @@ export default function CsvUploadPage() {
 
       <Card className="space-y-4">
         <div>
-          <label className="mb-1 block text-sm font-medium">CSV file</label>
+          <label className="mb-1 block text-sm font-medium text-white/70">CSV file</label>
           <input
             type="file"
             accept=".csv,text/csv"
             onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
-            className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-900 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-gray-700"
+            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-md file:border-0 file:bg-blue-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-blue-400"
           />
         </div>
 
         {headers.length > 0 && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium">
-                Domain / website column <span className="text-red-500">*</span>
+              <label className="mb-1 block text-sm font-medium text-white/70">
+                Domain / website column <span className="text-red-300">*</span>
               </label>
-              <select value={domainCol} onChange={(e) => setDomainCol(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm">
+              <select value={domainCol} onChange={(e) => setDomainCol(e.target.value)} className={selectClass}>
                 <option value="">Select…</option>
                 {headers.map((h) => (
                   <option key={h} value={h}>{h}</option>
@@ -113,8 +113,8 @@ export default function CsvUploadPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Company name column</label>
-              <select value={nameCol} onChange={(e) => setNameCol(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm">
+              <label className="mb-1 block text-sm font-medium text-white/70">Company name column</label>
+              <select value={nameCol} onChange={(e) => setNameCol(e.target.value)} className={selectClass}>
                 <option value="">(optional)</option>
                 {headers.map((h) => (
                   <option key={h} value={h}>{h}</option>
@@ -124,7 +124,7 @@ export default function CsvUploadPage() {
           </div>
         )}
 
-        {rows.length > 0 && <p className="text-sm text-gray-500">{rows.length} rows detected.</p>}
+        {rows.length > 0 && <p className="text-sm text-white/40">{rows.length} rows detected.</p>}
 
         <div className="flex items-center gap-3">
           <PrimaryButton onClick={submit} disabled={!canSubmit}>

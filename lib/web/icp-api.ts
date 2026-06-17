@@ -51,6 +51,8 @@ export interface IcpDefinition {
 
 // ── Calls ────────────────────────────────────────────────────────────────────
 
+export const listIcps = () => call<IcpDefinition[]>('/api/v1/icp');
+
 export const getTemplates = () => call<IcpTemplate[]>('/api/v1/icp/templates');
 
 export const submitWizard = (answers: Record<string, string>) =>

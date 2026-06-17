@@ -3,7 +3,7 @@
 import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Card, PrimaryButton, Banner } from '../../icp/ui';
+import { Card, PrimaryButton, Banner, inputClass } from '../../icp/ui';
 import { login } from '@/lib/web/auth-api';
 
 function LoginForm() {
@@ -30,15 +30,15 @@ function LoginForm() {
 
   return (
     <Card className="space-y-4">
-      <h1 className="text-xl font-semibold">Log in to ABM Engine</h1>
+      <h1 className="font-display text-xl font-semibold">Log in to ABM Engine</h1>
       {error && <Banner tone="red">{error}</Banner>}
       <form onSubmit={submit} className="space-y-3">
-        <input type="email" required placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" />
-        <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" />
+        <input type="email" required placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+        <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
         <PrimaryButton type="submit" disabled={busy}>{busy ? 'Logging in…' : 'Log in'}</PrimaryButton>
       </form>
-      <p className="text-sm text-gray-500">
-        No account? <Link href="/signup" className="underline hover:text-gray-700">Sign up</Link>
+      <p className="text-sm text-white/50">
+        No account? <Link href="/signup" className="text-blue-300 underline hover:text-blue-200">Sign up</Link>
       </p>
     </Card>
   );

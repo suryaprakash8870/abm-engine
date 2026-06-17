@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Card, PrimaryButton, Banner } from '../../icp/ui';
+import { Card, PrimaryButton, Banner, inputClass } from '../../icp/ui';
 import { signup } from '@/lib/web/auth-api';
 
 export default function SignupPage() {
@@ -30,16 +30,16 @@ export default function SignupPage() {
 
   return (
     <Card className="space-y-4">
-      <h1 className="text-xl font-semibold">Create your workspace</h1>
+      <h1 className="font-display text-xl font-semibold">Create your workspace</h1>
       {error && <Banner tone="red">{error}</Banner>}
       <form onSubmit={submit} className="space-y-3">
-        <input type="text" placeholder="Your name (optional)" value={fullName} onChange={(e) => setFullName(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" />
-        <input type="email" required placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" />
-        <input type="password" required minLength={8} placeholder="Password (8+ characters)" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-md border px-3 py-2 text-sm" />
+        <input type="text" placeholder="Your name (optional)" value={fullName} onChange={(e) => setFullName(e.target.value)} className={inputClass} />
+        <input type="email" required placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} />
+        <input type="password" required minLength={8} placeholder="Password (8+ characters)" value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
         <PrimaryButton type="submit" disabled={busy}>{busy ? 'Creating…' : 'Sign up'}</PrimaryButton>
       </form>
-      <p className="text-sm text-gray-500">
-        Already have an account? <Link href="/login" className="underline hover:text-gray-700">Log in</Link>
+      <p className="text-sm text-white/50">
+        Already have an account? <Link href="/login" className="text-blue-300 underline hover:text-blue-200">Log in</Link>
       </p>
     </Card>
   );

@@ -16,7 +16,7 @@ export function UserMenu() {
   }, []);
 
   return (
-    <div className="flex items-center gap-3 text-xs text-gray-500">
+    <div className="flex items-center gap-3 text-xs text-white/50">
       {email && <span>{email}</span>}
       <button
         onClick={async () => {
@@ -24,7 +24,7 @@ export function UserMenu() {
           router.push('/login');
           router.refresh();
         }}
-        className="underline hover:text-gray-700"
+        className="underline transition hover:text-white"
       >
         Log out
       </button>

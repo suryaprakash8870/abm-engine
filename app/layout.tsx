@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
+import { Sora } from 'next/font/google';
 import './globals.css';
+
+const display = Sora({ subsets: ['latin'], variable: '--font-display', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'ABM Engine',
@@ -8,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={display.variable}>
       <body>{children}</body>
     </html>
   );

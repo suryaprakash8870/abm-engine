@@ -53,7 +53,7 @@ export default function AccountsPage() {
     };
   }, [jobId]);
 
-  if (loading) return <p className="text-sm text-gray-500">Loading account list…</p>;
+  if (loading) return <p className="text-sm text-white/40">Loading account list…</p>;
   if (error) {
     return (
       <div className="space-y-4">
@@ -70,20 +70,20 @@ export default function AccountsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-semibold">Account list</h1>
+        <h1 className="font-display text-2xl font-medium text-white">Account list</h1>
         <Pill tone="green">{total} companies</Pill>
         {enr?.job && (
           <Pill tone="blue">
             {enr.job.qualifiedCount} qualified · {enr.job.disqualifiedCount} out
           </Pill>
         )}
-        {!showEnriched && <span className="text-xs text-gray-500">⏳ enriching + qualifying…</span>}
+        {!showEnriched && <span className="text-xs text-white/40">⏳ enriching + qualifying…</span>}
       </div>
 
-      <Card className="p-0">
+      <Card className="overflow-hidden p-0">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-xs uppercase tracking-wide text-gray-400">
+            <tr className="border-b border-white/10 text-left text-xs uppercase tracking-wide text-white/40">
               <th className="px-4 py-3 font-medium">Company</th>
               <th className="px-4 py-3 font-medium">Domain</th>
               {showEnriched ? (
@@ -100,11 +100,11 @@ export default function AccountsPage() {
           <tbody>
             {showEnriched
               ? enriched.map((a) => (
-                  <tr key={a.account_id} className="border-b last:border-0 hover:bg-gray-50" title={a.reason ?? ''}>
-                    <td className="px-4 py-2.5 font-medium text-gray-800">{a.name}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{a.domain}</td>
-                    <td className="px-4 py-2.5 text-gray-700">{a.industry ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-700">{a.headcount ?? '—'}</td>
+                  <tr key={a.account_id} className="border-b border-white/10 last:border-0 hover:bg-white/5" title={a.reason ?? ''}>
+                    <td className="px-4 py-2.5 font-medium text-white/85">{a.name}</td>
+                    <td className="px-4 py-2.5 text-white/60">{a.domain}</td>
+                    <td className="px-4 py-2.5 text-white/70">{a.industry ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-white/70">{a.headcount ?? '—'}</td>
                     <td className="px-4 py-2.5">
                       {a.qualified === null ? (
                         <Pill>—</Pill>
@@ -117,9 +117,9 @@ export default function AccountsPage() {
                   </tr>
                 ))
               : raw.map((a) => (
-                  <tr key={a.id} className="border-b last:border-0 hover:bg-gray-50">
-                    <td className="px-4 py-2.5 font-medium text-gray-800">{a.name}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{a.domain}</td>
+                  <tr key={a.id} className="border-b border-white/10 last:border-0 hover:bg-white/5">
+                    <td className="px-4 py-2.5 font-medium text-white/85">{a.name}</td>
+                    <td className="px-4 py-2.5 text-white/60">{a.domain}</td>
                     <td className="px-4 py-2.5">
                       <Pill>{a.source}</Pill>
                     </td>
@@ -129,9 +129,9 @@ export default function AccountsPage() {
         </table>
       </Card>
 
-      <div className="flex items-center justify-between border-t pt-6">
+      <div className="flex items-center justify-between border-t border-white/10 pt-6">
         <LinkButton href="/icp">← Back to ICP</LinkButton>
-        <span className="text-sm text-gray-400">Next: score + tier (Engine 04)</span>
+        <span className="text-sm text-white/35">Next: score + tier (Engine 04)</span>
       </div>
     </div>
   );

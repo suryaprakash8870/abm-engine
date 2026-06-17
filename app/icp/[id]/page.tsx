@@ -32,22 +32,22 @@ function TamSection({ icpId }: { icpId: string }) {
   return (
     <Card className="space-y-2">
       <SectionTitle>Account list · Engine 02</SectionTitle>
-      {!loaded && <p className="text-sm text-gray-400">Checking…</p>}
+      {!loaded && <p className="text-sm text-white/40">Checking…</p>}
       {loaded && !tam && (
-        <p className="text-sm text-gray-500">Sourcing starts automatically when the ICP is created.</p>
+        <p className="text-sm text-white/50">Sourcing starts automatically when the ICP is created.</p>
       )}
-      {tam?.status === 'running' && <p className="text-sm text-gray-600">⏳ Building your account list…</p>}
+      {tam?.status === 'running' && <p className="text-sm text-white/60">⏳ Building your account list…</p>}
       {tam?.status === 'failed' && <Banner tone="red">Account-list build failed.</Banner>}
       {tam?.status === 'completed' && (
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-700">
+          <span className="text-sm text-white/80">
             <strong>{tam.total_found}</strong> matching companies found.
           </span>
           <LinkButton href={`/accounts/${tam.job_id}`}>View account list →</LinkButton>
         </div>
       )}
       <div className="pt-1">
-        <a href={`/tam/upload?icp=${icpId}`} className="text-xs text-gray-500 underline hover:text-gray-700">
+        <a href={`/tam/upload?icp=${icpId}`} className="text-xs text-white/45 underline hover:text-white/70">
           or upload your own company list (CSV)
         </a>
       </div>
@@ -59,7 +59,7 @@ function TamSection({ icpId }: { icpId: string }) {
 function ChipRow({ label, items }: { label: string; items: string[] }) {
   return (
     <div>
-      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-400">{label}</div>
+      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-white/40">{label}</div>
       <ChipList items={items} />
     </div>
   );
@@ -96,7 +96,7 @@ export default function IcpReviewPage() {
   }, [id]);
 
   if (loading) {
-    return <p className="text-sm text-gray-500">Loading ICP…</p>;
+    return <p className="text-sm text-white/40">Loading ICP…</p>;
   }
 
   if (error || !icp) {
@@ -112,7 +112,7 @@ export default function IcpReviewPage() {
     <div className="space-y-6">
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold">Your ICP</h1>
+          <h1 className="font-display text-2xl font-medium text-white">Your ICP</h1>
           <Pill tone="blue">{icp.mode}</Pill>
           <Pill tone="gray">v{icp.version}</Pill>
         </div>
@@ -124,11 +124,11 @@ export default function IcpReviewPage() {
           <SectionTitle>Firmographics</SectionTitle>
           <ConfidenceBar value={icp.criteria_confidence.firmographics} label="confidence" />
           <ChipRow label="Industries" items={icp.firmographics.industries} />
-          <div className="text-sm text-gray-700">
+          <div className="text-sm text-white/70">
             Employees: {icp.firmographics.employee_min}–{icp.firmographics.employee_max}
           </div>
           <ChipRow label="Geographies" items={icp.firmographics.geographies} />
-          <div className="text-sm text-gray-700">Business model: {icp.firmographics.business_model}</div>
+          <div className="text-sm text-white/70">Business model: {icp.firmographics.business_model}</div>
         </Card>
 
         <Card className="space-y-4">
@@ -154,7 +154,7 @@ export default function IcpReviewPage() {
         </Card>
       </div>
 
-      <div className="space-y-4 border-t pt-6">
+      <div className="space-y-4 border-t border-white/10 pt-6">
         <TamSection icpId={id} />
         <LinkButton href="/icp">← Back</LinkButton>
       </div>

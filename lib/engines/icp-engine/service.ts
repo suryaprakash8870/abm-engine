@@ -92,6 +92,30 @@ export async function versionAndPersistIcp(
   return toDefinition(created, content);
 }
 
+/** List all ICPs for a workspace, newest first. */
+export async function listIcps(workspaceId: string): Promise<IcpDefinition[]> {
+  const rows = await prisma.icpDefinition.findMany({
+    where: { workspaceId },
+    orderBy: { createdAt: 'desc' },
+    include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
+  });
+  return rows.map((row) => {
+    const snapshot = (row.versions[0]?.snapshot ?? null) as IcpContent | null;
+    return {
+      icp_id: row.id,
+      version: row.version,
+      mode: row.mode as IcpMode,
+      firmographics: row.firmographics as IcpContent['firmographics'],
+      technographics: row.technographics as IcpContent['technographics'],
+      signals: row.signals as IcpContent['signals'],
+      exclusions: row.exclusions as IcpContent['exclusions'],
+      confidence_score: row.confidenceScore,
+      criteria_confidence:
+        snapshot?.criteria_confidence ?? { firmographics: 0, technographics: 0, signals: 0, exclusions: 0 },
+    };
+  });
+}
+
 /** Fetch a workspace-scoped ICP definition, or null. */
 export async function getIcp(workspaceId: string, id: string): Promise<IcpDefinition | null> {
   const row = await prisma.icpDefinition.findFirst({ where: { id, workspaceId } });
