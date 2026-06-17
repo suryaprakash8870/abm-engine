@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { UserMenu } from '@/lib/web/user-menu';
 
 export default function IcpLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -8,9 +9,7 @@ export default function IcpLayout({ children }: { children: React.ReactNode }) {
           <Link href="/icp" className="text-lg font-semibold">
             ICP Engine <span className="text-gray-400">/ 01</span>
           </Link>
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-500">
-            workspace: ws_demo
-          </span>
+          <UserMenu />
         </div>
       </header>
       <main className="mx-auto max-w-4xl px-6 py-8">{children}</main>

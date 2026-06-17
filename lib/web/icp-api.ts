@@ -1,16 +1,12 @@
 /**
  * Browser-side API client for the ICP Engine (Engine 01).
  *
- * Thin typed wrappers over /api/v1/icp/*. PHASE-0: auth is not wired yet, so we send
- * a dev `x-workspace-id` header (the foundation owner replaces this with the real
- * session). Every call returns a normalised { ok, status, data?, error }.
+ * Thin typed wrappers over /api/v1/icp/*. The tenant comes from the session cookie
+ * (sent automatically, same-origin). Every call returns { ok, status, data?, error }.
  */
-
-export const DEV_WORKSPACE_ID = 'ws_demo';
 
 const headers = {
   'Content-Type': 'application/json',
-  'x-workspace-id': DEV_WORKSPACE_ID,
 };
 
 export interface ApiResult<T> {

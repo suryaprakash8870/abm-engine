@@ -1,12 +1,12 @@
 /**
- * Workspace resolution for API routes.
+ * Workspace + session resolution for API routes.
  *
- * PHASE-0 PLACEHOLDER. The foundation owner (Vicky) replaces this with real
- * Supabase Auth: read the session, verify the JWT, and take `workspace_id` from
- * the JWT claim — NEVER from a request parameter (conventions.md). Until then,
- * routes resolve the workspace from an `x-workspace-id` header so engine owners
- * can build and test against the contracts.
+ * The tenant comes from the signed session cookie (set at login), NEVER from a
+ * request parameter (conventions.md). Multi-tenancy: every engine query is scoped
+ * by this workspace id.
  */
+
+import { SESSION_COOKIE, verifySession, type Session } from './session';
 
 export class UnauthorizedError extends Error {
   constructor(message = 'Unauthorized') {
@@ -15,14 +15,25 @@ export class UnauthorizedError extends Error {
   }
 }
 
-/** Resolve the caller's workspace id, or throw UnauthorizedError. */
-export function resolveWorkspaceId(req: Request): string {
-  // TODO(foundation/auth): replace with Supabase session → JWT workspace_id claim.
-  const ws = req.headers.get('x-workspace-id');
-  if (!ws || ws.trim() === '') {
-    throw new UnauthorizedError(
-      'Workspace not resolved. Auth is not wired yet — send an x-workspace-id header for now.',
-    );
+function parseCookies(header: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
   }
-  return ws;
+  return out;
+}
+
+/** The verified session for this request, or null. */
+export function getSession(req: Request): Session | null {
+  const token = parseCookies(req.headers.get('cookie') ?? '')[SESSION_COOKIE];
+  return token ? verifySession(token) : null;
+}
+
+/** Resolve the caller's workspace id from the session, or throw UnauthorizedError. */
+export function resolveWorkspaceId(req: Request): string {
+  const session = getSession(req);
+  if (!session) throw new UnauthorizedError('Not authenticated.');
+  return session.workspaceId;
 }
