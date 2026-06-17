@@ -53,13 +53,16 @@ model EnrichedAccount {
 
 model QualificationResult {
   id                   String   @id @default(cuid())
-  accountId            String   @unique @map("account_id")
+  workspaceId          String   @map("workspace_id")
+  accountId            String   @map("account_id")
   qualified            Boolean
   confidence           Float
   reason               String?
   disqualifyingFactors String[] @map("disqualifying_factors")
   createdAt            DateTime @default(now()) @map("created_at")
 
+  @@unique([workspaceId, accountId])
+  @@index([workspaceId])
   @@map("qualification_results")
 }
 

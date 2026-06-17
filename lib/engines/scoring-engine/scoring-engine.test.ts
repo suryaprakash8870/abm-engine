@@ -6,12 +6,27 @@
  * as // TODO(owner) until the core logic lands.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// The handler resolves the workspace ICP from the DB and enqueues a BullMQ job.
+// Mock both so the test exercises the handler contract without real Postgres/Redis.
+vi.mock('../../db/client', () => ({
+  prisma: {
+    icpDefinition: { findFirst: async () => ({ id: 'icp_1' }) },
+  },
+}));
+
+vi.mock('./scoring-queue', () => ({
+  enqueueScoringJob: vi.fn(async () => {}),
+  startScoringWorker: () => ({}),
+}));
+
 import engine from './index';
 import { assertMatchesCatalog } from '../contract';
 import { fakeEvent, withCapturedEvents } from '../../events';
 import type { AccountsScoredPayload } from '../../events';
 import { handleAccountsEnriched } from './handlers';
+import { enqueueScoringJob } from './scoring-queue';
 import { publishAccountsScored } from './publisher';
 
 describe('scoring-engine', () => {
@@ -38,14 +53,15 @@ describe('scoring-engine', () => {
     });
 
     const published = await withCapturedEvents(async () => {
-      // Handler accepts the valid trigger without throwing.
+      // Handler accepts the valid trigger without throwing and enqueues a scoring job
+      // (the actual scoring runs async in the BullMQ worker — never inline here).
       await handleAccountsEnriched(trigger);
+      expect(enqueueScoringJob).toHaveBeenCalledWith(
+        expect.objectContaining({ icpId: 'icp_1', accountIds: ['acc_1', 'acc_2'] }),
+      );
 
-      // The core pipeline is still a stub (// TODO(owner)). Once it runs the
-      // step-by-step job and passes completionCheck, the handler itself will
-      // publish this. For now we exercise the publish path directly so the test
-      // asserts the contract output type. TODO(owner): drive this through the
-      // handler end-to-end and assert the real tier_summary fields.
+      // The worker publishes accounts.scored after the completion check passes.
+      // Here we exercise the publish path directly to assert the contract output type.
       const payload: AccountsScoredPayload = {
         account_ids: ['acc_1', 'acc_2'],
         formula_version: 1,

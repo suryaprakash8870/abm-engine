@@ -16,6 +16,7 @@ export default function AccountsPage() {
 
   const [raw, setRaw] = useState<RawAccountRow[]>([]);
   const [enr, setEnr] = useState<EnrichmentResult | null>(null);
+  const [icpId, setIcpId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,8 +25,10 @@ export default function AccountsPage() {
     getTamAccounts(jobId)
       .then((res) => {
         if (!active) return;
-        if (res.ok && res.data) setRaw(res.data.accounts);
-        else setError(res.error?.message ?? 'Failed to load accounts.');
+        if (res.ok && res.data) {
+          setRaw(res.data.accounts);
+          setIcpId(res.data.job.icpId);
+        } else setError(res.error?.message ?? 'Failed to load accounts.');
       })
       .finally(() => active && setLoading(false));
     return () => {
@@ -131,7 +134,11 @@ export default function AccountsPage() {
 
       <div className="flex items-center justify-between border-t border-white/10 pt-6">
         <LinkButton href="/icp">← Back to ICP</LinkButton>
-        <span className="text-sm text-white/35">Next: score + tier (Engine 04)</span>
+        {icpId ? (
+          <LinkButton href={`/scoring/${icpId}`}>Score + tier →</LinkButton>
+        ) : (
+          <span className="text-sm text-white/35">Next: score + tier (Engine 04)</span>
+        )}
       </div>
     </div>
   );

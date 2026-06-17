@@ -139,8 +139,8 @@ export async function runEnrichment(
           icp,
         );
         await prisma.qualificationResult.upsert({
-          where: { accountId: acc.id },
-          create: { accountId: acc.id, qualified: q.qualified, confidence: q.confidence, reason: q.reason, disqualifyingFactors: q.disqualifyingFactors },
+          where: { workspaceId_accountId: { workspaceId: input.workspaceId, accountId: acc.id } },
+          create: { workspaceId: input.workspaceId, accountId: acc.id, qualified: q.qualified, confidence: q.confidence, reason: q.reason, disqualifyingFactors: q.disqualifyingFactors },
           update: { qualified: q.qualified, confidence: q.confidence, reason: q.reason, disqualifyingFactors: q.disqualifyingFactors },
         });
         if (q.qualified) qualified++;
@@ -227,7 +227,7 @@ export async function getEnrichedAccountsForSourceJob(workspaceId: string, sourc
     take: limit,
     orderBy: { enrichedAt: 'asc' },
   });
-  const quals = await prisma.qualificationResult.findMany({ where: { accountId: { in: accounts.map((a) => a.accountId) } } });
+  const quals = await prisma.qualificationResult.findMany({ where: { workspaceId, accountId: { in: accounts.map((a) => a.accountId) } } });
   const qmap = new Map(quals.map((q) => [q.accountId, q]));
   return {
     job: { id: job.id, status: job.status, total: job.total, qualifiedCount: job.qualifiedCount, disqualifiedCount: job.disqualifiedCount },

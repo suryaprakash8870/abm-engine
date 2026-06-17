@@ -87,7 +87,7 @@ export interface RawAccountRow {
 }
 
 export const getTamAccounts = (jobId: string) =>
-  call<{ count: number; accounts: RawAccountRow[] }>(`/api/v1/tam/accounts/${jobId}`);
+  call<{ job: { icpId: string; status: string }; count: number; accounts: RawAccountRow[] }>(`/api/v1/tam/accounts/${jobId}`);
 
 // ── Engine 03 (Enrichment) ───────────────────────────────────────────────────
 
