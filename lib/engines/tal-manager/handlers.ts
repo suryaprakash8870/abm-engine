@@ -3,54 +3,63 @@
  *
  * One async handler per CONSUMED event. Each handler:
  *   1. validates the payload (validation.ts),
- *   2. runs the core logic (service.ts) — stubbed for now,
- *   3. verifies the task-completion check, then publishes the success event
- *      (publisher.ts). Verify-before-publish (ADR-003).
+ *   2. runs the core step-by-step job (service.ts),
+ *   3. runs the task-completion check, then publishes `tal.finalized` ONLY when it
+ *      passes (verify-before-publish, ADR-003). A failed check throws so the event
+ *      consumer retries / dead-letters — it never publishes a half-finished TAL.
  *
- * Consumes (catalog source of truth):
- *   - accounts.scored  → handleAccountsScored
+ * Consumes: accounts.scored → handleAccountsScored
  */
 
 import type { EventEnvelope } from '../../events';
-import { validateAccountsScoredPayload } from './validation';
+import { validateAccountsScoredPayload, completionCheck } from './validation';
+import { finalizeTal } from './service';
 import { publishTalFinalized } from './publisher';
 
 /**
  * Trigger: Scoring Engine (04) finished scoring/tiering accounts.
  * Builds the official TAL, applies suppression, snapshots an immutable version,
- * writes CRM properties/lists (via Engine 10), then publishes `tal.finalized`.
+ * queues CRM property/list writes (Engine 10), then publishes `tal.finalized`.
  */
 export async function handleAccountsScored(
   event: EventEnvelope<'accounts.scored'>,
 ): Promise<void> {
   validateAccountsScoredPayload(event.payload);
 
-  // TODO(owner): core logic — orchestrate the step-by-step job via service.ts:
-  //   1. loadScoredList(workspaceId, payload)
-  //   2. applySuppression(workspaceId, accounts)
-  //   3. createTalVersion(workspaceId, activeAccounts)
-  //   4. resolveReviewStatus(workspaceId, talId)
-  //   5. writeCrmCompanyProperties(workspaceId, activeAccounts)   // via Engine 10
-  //   6. createActiveLists(workspaceId, talId)
-  //   7. queueLinkedInAudienceSync(workspaceId, talId)            // v2
-  // Then build CompletionCheckInput and run completionCheck(...) BEFORE publishing.
-  // If completionCheck().ok is false, publish an error event instead (see README).
-
   const ctx = { workspaceId: event.workspace_id, correlationId: event.correlation_id };
 
-  // TODO(owner): replace this placeholder payload with values from the real run.
+  const result = await finalizeTal(event.workspace_id, {
+    accountIds: event.payload.account_ids,
+    correlationId: event.correlation_id,
+  });
+
+  // Verify-before-publish: confirm the work is complete before announcing it.
+  // `finalizedEventPublished` is satisfied by the publish step immediately below.
+  const check = completionCheck({
+    suppressionApplied: result.suppressionApplied,
+    talVersionCreated: result.talVersionCreated,
+    crmPropertiesAndListsWritten: result.crmRequested,
+    finalizedEventPublished: true,
+  });
+
+  if (!check.ok) {
+    // No dedicated error event exists for this engine (catalog). Fail closed:
+    // do NOT publish a half-finished tal.finalized — throw so the consumer retries.
+    throw new Error(`[tal-manager] completion check failed: ${check.failed.join('; ')}`);
+  }
+
   await publishTalFinalized(
     {
-      tal_id: '',
-      version: 0,
-      version_number: 0,
-      account_count: 0,
-      tier1_count: 0,
-      tier2_count: 0,
-      tier3_count: 0,
-      status: 'pending',
-      review_status: 'unreviewed',
-      suppressed_count: 0,
+      tal_id: result.talId,
+      version: result.versionNumber,
+      version_number: result.versionNumber,
+      account_count: result.accountCount,
+      tier1_count: result.tier1Count,
+      tier2_count: result.tier2Count,
+      tier3_count: result.tier3Count,
+      status: result.status,
+      review_status: result.reviewStatus,
+      suppressed_count: result.suppressedCount,
       finalized_at: event.timestamp,
     },
     ctx,

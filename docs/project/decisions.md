@@ -5,6 +5,20 @@
 
 ---
 
+## ADR-013 — TAL Manager delegates CRM writes via the event, not synchronously
+
+**Status:** Accepted
+
+**Context:** Engine 05's spec lists "CRM company properties + active lists written (confirmed via Engine 10)" as a completion-check item that must pass *before* publishing `tal.finalized`. But Engine 10 (CRM Sync) *consumes* `tal.finalized` — the CRM write happens downstream of the publish, not before it. Engines also communicate only through events (ADR-011), so Engine 05 cannot synchronously call Engine 10 and await confirmation. Engine 10 is also not built yet.
+
+**Decision:** Engine 05 satisfies the CRM completion item by *durably recording the sync request* in `crm_audience_sync_log` (status `queued`) and including all data Engine 10 needs in the `tal.finalized` payload. The actual CRM write is Engine 10's responsibility, fulfilled when it consumes `tal.finalized` and later confirmed via a `crm.synced` event. `requestCrmSync()` returning true (requests recorded) is what gates the publish — not an end-to-end CRM ack.
+
+**Why:** This respects the event-driven architecture (rule #2) and rule #8 (all CRM writes go through Engine 10) without a synchronous cross-engine dependency or a chicken-and-egg publish ordering. The TAL Manager's verifiable responsibility ends at "the list is finalized and the CRM-write request is durably queued."
+
+**Consequences:** "CRM written" in the completion check means "CRM write requested + queued," not "confirmed in the CRM." True confirmation arrives asynchronously via `crm.synced` (consumed by GTM Flywheel). When Engine 10 is built, it must mark the `crm_audience_sync_log` rows `synced`/`failed`. Also: like Engine 04, Engine 05 reads another engine's tables directly (`account_scores`, `enriched_accounts`) to assemble the list — covered by the existing deferred "local snapshot" refactor, not a new exception.
+
+---
+
 ## ADR-012 — Microservices via engine boundaries, monolith deployment for MVP
 
 **Status:** Accepted

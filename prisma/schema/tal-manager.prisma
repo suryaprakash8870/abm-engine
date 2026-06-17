@@ -1,72 +1,105 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Engine 05 — TAL Manager. Owned by <unassigned>.
+// Engine 05 — TAL Manager.
+//
+// Builds + maintains the official Target Account List: applies suppression,
+// snapshots immutable versions, and hands the final list to CRM + ad platforms
+// (via Engine 10, by publishing `tal.finalized`).
 //
 // Tables this engine owns (no other engine queries them directly — they listen
-// to `tal.finalized` and keep local copies). This file is COMMENTS ONLY until
-// the owner fills in the models; comments-only is a valid Prisma schema file.
-//
-// TODO(owner): define models + add workspaceId + RLS to every table.
+// to `tal.finalized` and keep local copies). Every table is workspace-scoped
+// (CLAUDE.md rule #3).
 // ─────────────────────────────────────────────────────────────────────────────
 
-// target_account_lists (id, workspace_id, name, version, account_count, status, created_at)
-// model TargetAccountList {
-//   id           String   @id @default(cuid())
-//   workspaceId  String   @map("workspace_id")
-//   name         String
-//   version      Int
-//   accountCount Int      @map("account_count")
-//   status       String
-//   createdAt    DateTime @default(now()) @map("created_at")
-//
-//   @@index([workspaceId])
-//   @@map("target_account_lists")
-// }
+// The official, single Target Account List per workspace (the "head"). Its
+// membership lives in tal_accounts; immutable history lives in tal_versions.
+model TargetAccountList {
+  id           String   @id @default(cuid())
+  workspaceId  String   @map("workspace_id")
+  name         String   @default("Target Account List")
+  version      Int      @default(0) // current head version number
+  accountCount Int      @default(0) @map("account_count")
+  status       String   @default("draft") // draft | finalized
+  reviewStatus String   @default("unreviewed") @map("review_status") // reviewed | unreviewed
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-// tal_accounts (id, tal_id, account_id, tier, added_at) — join table
-// model TalAccount {
-//   id        String   @id @default(cuid())
-//   talId     String   @map("tal_id")
-//   accountId String   @map("account_id")
-//   tier      Int
-//   addedAt   DateTime @default(now()) @map("added_at")
-//
-//   @@index([talId])
-//   @@map("tal_accounts")
-// }
+  accounts TalAccount[]
+  versions TalVersion[]
+  syncLogs CrmAudienceSyncLog[]
 
-// tal_versions (id, tal_id, version_number, snapshot JSONB, created_at)
-// model TalVersion {
-//   id            String   @id @default(cuid())
-//   talId         String   @map("tal_id")
-//   versionNumber Int      @map("version_number")
-//   snapshot      Json
-//   createdAt     DateTime @default(now()) @map("created_at")
-//
-//   @@index([talId])
-//   @@map("tal_versions")
-// }
+  @@unique([workspaceId]) // one official TAL per workspace
+  @@map("target_account_lists")
+}
 
-// suppression_list (id, workspace_id, domain, reason, suppressed_until, created_at)
-// model SuppressionEntry {
-//   id              String    @id @default(cuid())
-//   workspaceId     String    @map("workspace_id")
-//   domain          String
-//   reason          String
-//   suppressedUntil DateTime? @map("suppressed_until")
-//   createdAt       DateTime  @default(now()) @map("created_at")
-//
-//   @@index([workspaceId])
-//   @@map("suppression_list")
-// }
+// Current active membership of the TAL (one row per account on the list).
+model TalAccount {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  talId       String   @map("tal_id")
+  accountId   String   @map("account_id")
+  domain      String?
+  name        String?
+  tier        Int // 1 | 2 | 3 — untiered accounts are never added to the TAL
+  score       Float // snapshot of the score at add time
+  addedAt     DateTime @default(now()) @map("added_at")
 
-// crm_audience_sync_log (id, tal_id, platform, status, synced_at)
-// model CrmAudienceSyncLog {
-//   id       String    @id @default(cuid())
-//   talId    String    @map("tal_id")
-//   platform String
-//   status   String
-//   syncedAt DateTime? @map("synced_at")
-//
-//   @@index([talId])
-//   @@map("crm_audience_sync_log")
-// }
+  tal TargetAccountList @relation(fields: [talId], references: [id], onDelete: Cascade)
+
+  @@unique([talId, accountId])
+  @@index([workspaceId])
+  @@index([talId])
+  @@map("tal_accounts")
+}
+
+// Immutable snapshot of the TAL at a point in time (one per finalize).
+model TalVersion {
+  id                  String   @id @default(cuid())
+  workspaceId         String   @map("workspace_id")
+  talId               String   @map("tal_id")
+  versionNumber       Int      @map("version_number")
+  snapshot            Json // full membership + counts at this version
+  sourceCorrelationId String?  @map("source_correlation_id") // event that produced it (retry idempotency)
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  tal TargetAccountList @relation(fields: [talId], references: [id], onDelete: Cascade)
+
+  @@unique([talId, versionNumber])
+  @@unique([workspaceId, sourceCorrelationId]) // idempotency: one version per source event (NULLs are unconstrained)
+  @@index([workspaceId])
+  @@index([talId])
+  @@map("tal_versions")
+}
+
+// Suppression rules: never (re)target these. Matched by domain and/or account id.
+model SuppressionEntry {
+  id              String    @id @default(cuid())
+  workspaceId     String    @map("workspace_id")
+  domain          String?
+  accountId       String?   @map("account_id")
+  reason          String // existing_customer | closed_lost | do_not_contact | unsubscribed | manual
+  suppressedUntil DateTime? @map("suppressed_until") // null = indefinite
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([workspaceId])
+  @@index([workspaceId, domain])
+  @@map("suppression_list")
+}
+
+// Audit log of audience/property sync requests handed to Engine 10 / ad platforms.
+model CrmAudienceSyncLog {
+  id          String    @id @default(cuid())
+  workspaceId String    @map("workspace_id")
+  talId       String    @map("tal_id")
+  platform    String // hubspot_list | hubspot_property | linkedin
+  audience    String? // e.g. "Tier 1", "Tier 2", "All ABM"
+  status      String // queued | synced | failed
+  detail      String?
+  syncedAt    DateTime? @map("synced_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  tal TargetAccountList @relation(fields: [talId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([talId])
+  @@map("crm_audience_sync_log")
+}

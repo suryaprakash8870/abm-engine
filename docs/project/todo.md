@@ -92,24 +92,34 @@
 ## Phase 3 — Engines 04 + 05
 
 ### Engine 04 Scoring
-- [ ] Prisma models (scoring_formulas, scoring_formula_versions, account_scores, score_history, tier_overrides)
-- [ ] Claude Sonnet formula generation
-- [ ] Scoring calculation engine
-- [ ] Formula editor UI (weight sliders + live preview)
-- [ ] Tier assignment + cutoffs
-- [ ] Tier 1 review mode
-- [ ] Score breakdown view
-- [ ] `accounts.scored` publisher
-- [ ] Integration test + health check
+- [x] Prisma models (scoring_formulas, scoring_formula_versions, account_scores, score_history, tier_overrides)
+- [x] Claude Sonnet formula generation (tool-call forced JSON, weight-normalised, equal-weight fallback)
+- [x] Scoring calculation engine (per-criterion 1/0.5/0 weighted sum)
+- [x] Formula editor UI (weight sliders + tier distribution)
+- [x] Tier assignment + cutoffs (tier3_min floor now honoured — below it = untiered/null, not Tier 3)
+- [x] Score breakdown view (scored-accounts table + override modal)
+- [x] `accounts.scored` publisher (fixed: completion gate was permanently locked → always reported failed)
+- [~] Tier 1 review mode — manual override exists; dedicated review view TBD
+- [x] Integration test (42/42 pass) + health check ([index.ts](../../lib/engines/scoring-engine/index.ts) health())
+- Audit (2026-06-17): 7-dimension multi-agent review → 17 confirmed findings.
+  - Batch 1 (code-only) shipped: completion-gate showstopper, wrong-ICP load, formula validation, recordTierBoundaries verify, job dedup, UI type + bad prisma import.
+  - Batch 2 (migration 20260617120000) shipped: nullable tier for tier3_min, QualificationResult.workspace_id (+ Engine 03 write/read scoping).
+  - Deferred: cross-engine snapshot refactor (rule #1) — currently functionally safe; do during microservice split.
+  - VERIFIED end-to-end: scored "Cobalt AI" → 65 → Tier 2, accounts.scored published once, no retries.
+- Known downstream bug (Engine 05 stub): tal-manager publishes tal.finalized with empty tal_id → dead-letters in contact/crm engines. Fix when building Engine 05.
 
 ### Engine 05 TAL Manager
-- [ ] Prisma models (target_account_lists, tal_accounts, tal_versions, suppression_list, crm_audience_sync_log)
-- [ ] Suppression rule engine
-- [ ] TAL versioning
-- [ ] HubSpot active list creation
-- [ ] CSV export
-- [ ] `tal.finalized` publisher
-- [ ] Integration test + health check
+- [x] Prisma models (target_account_lists, tal_accounts, tal_versions, suppression_list, crm_audience_sync_log) — workspace_id on ALL 5 (migration 20260617110327)
+- [x] Suppression rule engine (domain + accountId match, active/expired-aware)
+- [x] TAL versioning (immutable tal_versions snapshot per finalize; idempotent on correlation_id)
+- [~] HubSpot active list creation — requests recorded in crm_audience_sync_log ('queued'); actual write delegated to Engine 10 via tal.finalized
+- [x] CSV export (GET /api/v1/tal/export)
+- [x] `tal.finalized` publisher (real tal_id + verify-before-publish; fixed the empty-tal_id dead-letter the stub produced)
+- [x] Integration test (3 tests incl. fail-closed gating) + health check (GET /api/v1/tal-manager/health)
+- [x] API routes: GET /tal, GET /tal/versions, POST /tal/suppress, POST /tal/finalize, GET /tal/export
+- [x] UI: /tal accounts table (tier filter, suppress modal, export, re-finalize)
+- VERIFIED end-to-end: finalized TAL v1 (Cobalt AI, Tier 2), tal.finalized consumed cleanly by contact + crm-sync engines, 0 dead-letters.
+- Audit (2026-06-17): 6-dimension multi-agent review → 13 findings; 1 "critical" was a FALSE POSITIVE (the enriched join works — proven live). Fixed: atomic version transaction (migration 20260617130000 adds unique[workspace_id, source_correlation_id]), workspaceId on all deletes, tier-validity filter (no `?? 3`), CRM-sync skip on idempotent reuse, empty-vs-undefined account_ids. Re-verified: re-finalize cut v2 atomically (1→2, no gap).
 
 ### Billing (Stripe)
 - [ ] Stripe products + prices
