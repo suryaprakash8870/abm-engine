@@ -182,18 +182,18 @@
 ---
 
 ## Phase 7 — Engine 09 Orchestrator
-- [ ] Prisma models (plays_log, play_templates, play_outcomes, suppression_rules, sequence_mappings, ai_draft_log)
-- [ ] Routing rules executor
-- [ ] Play matrix logic
-- [ ] Suppression check (atomic)
-- [ ] Slack OAuth app + notification cards
-- [ ] Slack interactive button handlers
-- [ ] HubSpot task creation
-- [ ] Claude Sonnet account narrative
-- [ ] AI email draft generation (v1.1)
-- [ ] Play queue UI
-- [ ] `play.fired`, `play.outcome_recorded` publishers
-- [ ] Integration test + health check
+- [x] Prisma models (plays_log, play_templates, play_outcomes, suppression_rules, sequence_mappings, ai_draft_log) — all workspace-scoped (migration 20260618...demand_gen_orchestrator)
+- [x] Play matrix logic (defaultPlay tier×stage×trigger; play_templates workspace override)
+- [x] Suppression check (atomic: Redis per-account lock + cooldown_days + max_per_month + snooze/not_interested hard-blocks) — checked BEFORE any external call
+- [~] Slack notification — MOCKED (slack_message_ts); real Slack OAuth/cards deferred to v1.1
+- [~] HubSpot task creation — delegated to Engine 10 via play.fired (crm_task_id filled CRM-side, ADR-013)
+- [x] AI email draft generation (Claude Sonnet on demand, deterministic fallback template; ai_draft_log)
+- [x] Play queue UI (/plays — queue + outcome/snooze actions + AI-draft side panel with 3 subject tabs)
+- [x] `play.fired` (verify-before-publish), `play.outcome_recorded` publishers; 5 API routes (feed/fire/outcome/snooze/generate-draft)
+- [x] 6 integration tests + health check
+- VERIFIED end-to-end: signal → awareness → account.hot → orchestrator fired hot_account_alert (Slack ts set); play.fired consumed by crm-sync (10) + flywheel (11), 0 dead-letters; cooldown suppression held on the 2nd trigger (no duplicate play).
+- ENV NOTE: pinned DATABASE_URL/DIRECT_URL/REDIS_URL to 127.0.0.1 in .env (was localhost) — Docker Desktop's IPv6 host-proxy broke after a container recreate; .env.bak holds the original.
+- Audit (2026-06-18): 6-dim × 2-lens multi-agent review → 23 raw findings. Fixed the real ones: Postgres advisory-lock atomic check-and-lock (replaced Redis lock — works without Redis), UTC month boundary (+ same fix in Engine 08), gt cooldown (+ Engine 08), stage-aware hot matrix (hot_account_escalation for late stages), completion check verifies enrolled status, deterministic DM pick (orderBy), AI-draft shape validation, fire-route client type. Rejected FPs: the `where:{id,workspaceId}` "bypass" (verified live: P2025 on wrong workspace — extended-where-unique applies the filter), manual-fire "double-publish" (runOrchestration doesn't publish), not_interested "permanent" (re-recording the outcome clears it). Re-verified live: advisory-lock fire path → hot_account_escalation, 0 dead-letters.
 
 ---
 

@@ -196,13 +196,14 @@ export async function evaluateRoutingRules(
     if (!isMatch) continue; // only matched rules get an eval row (non-matches would grow unbounded)
     matched += 1;
 
-    // Cooldown: don't re-fire for this account within cooldown_days.
+    // Cooldown: don't re-fire for this account until STRICTLY past cooldown_days (gt, not gte).
     const cooldownCutoff = new Date(asOf.getTime() - rule.cooldownDays * 24 * 3600 * 1000);
     const recentFire = await prisma.routingRuleEvaluation.findFirst({
-      where: { workspaceId, ruleId: rule.id, accountId, firedAt: { gte: cooldownCutoff } },
+      where: { workspaceId, ruleId: rule.id, accountId, firedAt: { gt: cooldownCutoff } },
     });
     // Monthly cap: at most max_per_month fires for this rule across the workspace.
-    const monthStart = new Date(asOf.getFullYear(), asOf.getMonth(), 1);
+    // UTC month boundary (server-local TZ would mis-bucket fires near midnight).
+    const monthStart = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 1));
     const firesThisMonth = await prisma.routingRuleEvaluation.count({ where: { workspaceId, ruleId: rule.id, firedAt: { gte: monthStart } } });
 
     const suppressed = !!recentFire || firesThisMonth >= rule.maxPerMonth;

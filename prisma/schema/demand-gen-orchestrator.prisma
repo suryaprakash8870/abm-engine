@@ -1,69 +1,96 @@
-// Engine 09 — Demand Gen Orchestrator
-// Owned by <unassigned>
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine 09 — Demand Gen Orchestrator.
 //
-// Tables this engine owns (no other engine queries them directly — they listen to
-// this engine's events and keep local copies). The models below are COMMENTED-OUT
-// stubs so this file is valid-but-empty until the owner fills them in.
-//
-// TODO(owner): define models + add workspaceId + RLS (Supabase Row-Level Security,
-//   ADR-004). Every table must carry workspace_id and an RLS policy scoping by tenant.
+// "Where intelligence becomes action." Consumes Awareness triggers, evaluates the
+// tier×stage play matrix, checks suppression atomically, fires the play (CRM task
+// via Engine 10 + Slack + sequence enrolment), and logs it. Tables this engine
+// owns (no other engine queries them directly). Every table is workspace-scoped.
+// ─────────────────────────────────────────────────────────────────────────────
 
-// model plays_log {
-//   id                String   @id @default(uuid())
-//   workspace_id      String
-//   account_id        String
-//   contact_id        String?
-//   play_type         String
-//   trigger_type      String
-//   trigger_signal_id String?
-//   execution_method  String
-//   status            String
-//   crm_task_id       String?
-//   slack_message_ts  String?
-//   assigned_to       String?
-//   outcome           String?
-//   fired_at          DateTime
-// }
+model PlaysLog {
+  id              String    @id @default(cuid())
+  workspaceId     String    @map("workspace_id")
+  accountId       String    @map("account_id")
+  contactId       String?   @map("contact_id")
+  playType        String    @map("play_type")
+  triggerType     String    @map("trigger_type")
+  triggerSignalId String?   @map("trigger_signal_id")
+  executionMethod String    @map("execution_method")
+  status          String    @default("fired") // fired | enrolled | snoozed | suppressed
+  crmTaskId       String?   @map("crm_task_id")
+  slackMessageTs  String?   @map("slack_message_ts")
+  assignedTo      String?   @map("assigned_to")
+  outcome         String?
+  snoozedUntil    DateTime? @map("snoozed_until")
+  correlationId   String?   @map("correlation_id")
+  firedAt         DateTime  @default(now()) @map("fired_at")
 
-// model play_templates {
-//   id              String @id @default(uuid())
-//   workspace_id    String
-//   play_type       String
-//   tier            Int
-//   stage           String
-//   template_config Json
-// }
+  @@unique([workspaceId, accountId, correlationId]) // idempotency: one play per trigger event
+  @@index([workspaceId, accountId])
+  @@index([workspaceId, status])
+  @@map("plays_log")
+}
 
-// model play_outcomes {
-//   id          String   @id @default(uuid())
-//   play_id     String
-//   outcome     String
-//   notes       String?
-//   recorded_at DateTime
-// }
+model PlayTemplate {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  playType        String   @map("play_type")
+  tier            Int
+  stage           String
+  executionMethod String   @map("execution_method")
+  templateConfig  Json     @map("template_config")
+  isActive        Boolean  @default(true) @map("is_active")
 
-// model suppression_rules {
-//   id            String @id @default(uuid())
-//   workspace_id  String
-//   rule_type     String
-//   cooldown_days Int
-//   max_per_month Int
-// }
+  @@unique([workspaceId, tier, stage]) // one active template per tier×stage cell
+  @@index([workspaceId])
+  @@map("play_templates")
+}
 
-// model sequence_mappings {
-//   id           String @id @default(uuid())
-//   workspace_id String
-//   tier         Int
-//   industry     String
-//   role         String
-//   sequence_id  String
-// }
+model PlayOutcome {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  playId      String   @map("play_id")
+  outcome     String
+  notes       String?
+  recordedAt  DateTime @default(now()) @map("recorded_at")
 
-// model ai_draft_log {
-//   id            String   @id @default(uuid())
-//   play_id       String
-//   subject_lines String[]
-//   body          String
-//   model_used    String
-//   generated_at  DateTime
-// }
+  @@index([workspaceId, playId])
+  @@map("play_outcomes")
+}
+
+model SuppressionRule {
+  id           String  @id @default(cuid())
+  workspaceId  String  @map("workspace_id")
+  ruleType     String  @map("rule_type") // cooldown | unsubscribe | not_interested
+  cooldownDays Int     @default(7) @map("cooldown_days")
+  maxPerMonth  Int     @default(4) @map("max_per_month")
+  isActive     Boolean @default(true) @map("is_active")
+
+  @@index([workspaceId])
+  @@map("suppression_rules")
+}
+
+model SequenceMapping {
+  id          String  @id @default(cuid())
+  workspaceId String  @map("workspace_id")
+  tier        Int
+  industry    String?
+  role        String?
+  sequenceId  String  @map("sequence_id")
+
+  @@index([workspaceId, tier])
+  @@map("sequence_mappings")
+}
+
+model AiDraftLog {
+  id           String   @id @default(cuid())
+  workspaceId  String   @map("workspace_id")
+  playId       String   @map("play_id")
+  subjectLines String[] @map("subject_lines")
+  body         String
+  modelUsed    String   @map("model_used")
+  generatedAt  DateTime @default(now()) @map("generated_at")
+
+  @@index([workspaceId, playId])
+  @@map("ai_draft_log")
+}
