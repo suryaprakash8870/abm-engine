@@ -291,6 +291,19 @@ export async function scoreAndTierAccounts(
   const icpFirm = (icpRow.firmographics ?? {}) as Record<string, unknown>;
   const icpTech = (icpRow.technographics ?? {}) as Record<string, unknown>;
 
+  // "User override always wins" (doc failure-handling). Load the LATEST override
+  // per account so a re-score honours it instead of silently reverting to the
+  // formula tier. tier_overrides is an append log → newest row per account wins.
+  const overrideRows = await prisma.tierOverride.findMany({
+    where: { workspaceId, accountId: { in: accountIds } },
+    orderBy: { overriddenAt: 'desc' },
+    select: { accountId: true, tier: true },
+  });
+  const overrideMap = new Map<string, Tier>();
+  for (const o of overrideRows) {
+    if (!overrideMap.has(o.accountId)) overrideMap.set(o.accountId, o.tier as Tier);
+  }
+
   const { tier_boundaries: b } = formula;
 
   return accountIds.map((accountId) => {
@@ -319,11 +332,15 @@ export async function scoreAndTierAccounts(
     // Honour the tier3_min floor: an account below it is scored but untiered
     // (null) — it does NOT belong in any tier / the TAL. Previously these were
     // silently mislabelled Tier 3.
-    const tier: Tier | null =
+    const formulaTier: Tier | null =
       total_score >= b.tier1_min ? 1
       : total_score >= b.tier2_min ? 2
       : total_score >= b.tier3_min ? 3
       : null;
+
+    // A manual override wins over the formula tier (and can promote an otherwise
+    // untiered account onto the TAL).
+    const tier: Tier | null = overrideMap.get(accountId) ?? formulaTier;
 
     return { account_id: accountId, total_score, tier, criterion_scores, formula_version: formula.version };
   });

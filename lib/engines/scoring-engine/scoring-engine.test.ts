@@ -8,11 +8,23 @@
 
 import { describe, it, expect, vi } from 'vitest';
 
-// The handler resolves the workspace ICP from the DB and enqueues a BullMQ job.
-// Mock both so the test exercises the handler contract without real Postgres/Redis.
+// The handler resolves the workspace ICP from the DB and enqueues a BullMQ job;
+// scoreAndTierAccounts reads enriched/qualification/override rows. Mock the DB +
+// queue so the tests exercise real logic without Postgres/Redis. Hoisted vi.fns
+// let each test control the override rows.
+const db = vi.hoisted(() => ({
+  icpFindFirst: vi.fn(async () => ({ id: 'icp_1', firmographics: {}, technographics: {} })),
+  enrichedFindMany: vi.fn(async () => [] as unknown[]),
+  qualFindMany: vi.fn(async () => [] as unknown[]),
+  overrideFindMany: vi.fn(async () => [] as Array<{ accountId: string; tier: number }>),
+}));
+
 vi.mock('../../db/client', () => ({
   prisma: {
-    icpDefinition: { findFirst: async () => ({ id: 'icp_1' }) },
+    icpDefinition: { findFirst: db.icpFindFirst },
+    enrichedAccount: { findMany: db.enrichedFindMany },
+    qualificationResult: { findMany: db.qualFindMany },
+    tierOverride: { findMany: db.overrideFindMany },
   },
 }));
 
@@ -28,6 +40,7 @@ import type { AccountsScoredPayload } from '../../events';
 import { handleAccountsEnriched } from './handlers';
 import { enqueueScoringJob } from './scoring-queue';
 import { publishAccountsScored } from './publisher';
+import { scoreAndTierAccounts, type ScoringFormula } from './service';
 
 describe('scoring-engine', () => {
   it('matches the frozen event catalog', () => {
@@ -81,5 +94,29 @@ describe('scoring-engine', () => {
     expect(published).toContainEqual(
       expect.objectContaining({ type: 'accounts.scored' }),
     );
+  });
+
+  it('re-score: a manual tier override wins over the formula tier (doc: "user override always wins")', async () => {
+    // acc_1 has no enriched data → industry_fit scores 0 → formula tier is null
+    // (untiered). This is the state a fresh re-score would compute.
+    const formula: ScoringFormula = {
+      id: 'f_1',
+      icp_id: 'icp_1',
+      version: 1,
+      is_fallback: false,
+      criteria: [{ key: 'industry_fit', label: 'Industry Fit', weight: 1, rationale: 'x' }],
+      tier_boundaries: { tier1_min: 70, tier2_min: 40, tier3_min: 10 },
+    };
+
+    db.overrideFindMany.mockResolvedValueOnce([]);
+    const [noOverride] = await scoreAndTierAccounts('ws_1', ['acc_1'], formula);
+    expect(noOverride.tier).toBeNull();
+
+    // Same low-scoring account, now with an active override → Tier 1 survives the
+    // re-score, and the fit score is unchanged (only the tier is overridden).
+    db.overrideFindMany.mockResolvedValueOnce([{ accountId: 'acc_1', tier: 1 }]);
+    const [withOverride] = await scoreAndTierAccounts('ws_1', ['acc_1'], formula);
+    expect(withOverride.tier).toBe(1);
+    expect(withOverride.total_score).toBe(noOverride.total_score);
   });
 });
