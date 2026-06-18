@@ -50,7 +50,10 @@ export async function enqueueSourcingJob(
   const correlationId = input.correlationId ?? newCorrelationId();
   // Dedup: one sourcing job per (account, source event) — an event replay or a
   // double-click can't spawn two identical sourcing runs.
-  const jobId = `${input.workspaceId}:${input.accountId}:${correlationId}`;
+  // BullMQ rejects a custom jobId unless it has exactly two colons (3 parts); the
+  // per-account correlationId (`${corr}:${accountId}`) carries its own colon, so
+  // flatten any colons in it before composing the id.
+  const jobId = `${input.workspaceId}:${input.accountId}:${correlationId.replace(/:/g, '_')}`;
   await sourcingQueue().add('source', { ...input, correlationId }, { jobId });
 }
 
