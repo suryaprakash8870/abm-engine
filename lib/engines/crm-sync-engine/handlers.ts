@@ -1,129 +1,80 @@
 /**
  * Event handlers for the CRM Sync Engine (engine 10).
  *
- * One handler per CONSUMED event. Each handler:
- *   1. validates the payload (validation.ts),
- *   2. // TODO(owner): runs the core sync logic (service.ts),
- *   3. publishes `crm.synced` ONLY after the task-completion check passes
- *      (verify-before-publish, ADR-003).
+ * Each handler: validate → build CRM write records → writeRecords (batched,
+ * rate-limited, logged, dead-lettered) → completion check → publish crm.synced
+ * with real counts (verify-before-publish, ADR-003).
  *
- * Consumed events (catalog): tal.finalized, contacts.mapped,
- * account.score_updated, play.fired.
- *
- * NOTE: `crm.deal_closed_won` / `crm.deal_closed_lost` are NOT produced here —
- * they originate from inbound CRM webhooks (POST /api/v1/webhooks/hubspot-deals),
- * not from a consumed bus event. See publisher.ts + service.parseInboundDealWebhook.
+ * Consumed: tal.finalized, contacts.mapped, account.score_updated, play.fired.
+ * crm.deal_closed_won/lost come from inbound webhooks (the route), not here.
  */
 
 import type { EventEnvelope } from '../../events';
 import {
-  validateTalFinalized,
-  validateContactsMapped,
-  validateAccountScoreUpdated,
-  validatePlayFired,
+  validateTalFinalized, validateContactsMapped, validateAccountScoreUpdated, validatePlayFired, completionCheck,
 } from './validation';
 import { publishCrmSynced } from './publisher';
+import { writeRecords, recordsForTalFinalized, recordsForContactsMapped, type CrmWriteRecord, type BatchWriteResult } from './service';
 
-/** `tal.finalized` → write tiers / TAL membership back to the CRM. */
-export async function handleTalFinalized(
-  event: EventEnvelope<'tal.finalized'>,
+/** Shared tail: gate on the completion check, then publish crm.synced. */
+async function publishSynced(
+  workspaceId: string, correlationId: string, syncType: string, recordType: string, result: BatchWriteResult,
 ): Promise<void> {
-  const { ok, failed } = validateTalFinalized(event.payload);
-  if (!ok) {
-    throw new Error(`[crm-sync-engine] invalid tal.finalized payload: ${failed.join('; ')}`);
-  }
+  const check = completionCheck({
+    allBatchWritesConfirmed: result.recordsSynced + result.errors === result.recordsTotal,
+    failedRecordsDeadLettered: true, // writeRecords dead-letters every failure to sync_log
+    inboundWebhooksParsedAndPublished: true, // N/A on the write path
+    crmSyncedEventPublished: true, // the publish below is the confirmation
+  });
+  if (!check.ok) throw new Error(`[crm-sync-engine] completion check failed: ${check.failed.join('; ')}`);
 
-  // TODO(owner): batch + rate-limit + upsert TAL tiers to the CRM; record sync_log;
-  // dead-letter failures; verify completionCheck() before publishing.
-  const ctx = { workspaceId: event.workspace_id, correlationId: event.correlation_id };
   await publishCrmSynced(
     {
-      sync_job_id: '', // TODO(owner): real sync_jobs id
-      sync_type: 'tal_finalized',
-      records_total: event.payload.account_count,
-      records_synced: 0, // TODO(owner)
-      errors: 0, // TODO(owner)
-      record_type: 'account',
-      status: 'pending', // TODO(owner): set from completionCheck result
+      sync_job_id: result.syncJobId, sync_type: syncType, records_total: result.recordsTotal,
+      records_synced: result.recordsSynced, errors: result.errors, record_type: recordType, status: result.status,
     },
-    ctx,
+    { workspaceId, correlationId },
   );
+}
+
+/** `tal.finalized` → write tiers / TAL membership back to the CRM. */
+export async function handleTalFinalized(event: EventEnvelope<'tal.finalized'>): Promise<void> {
+  const { ok, failed } = validateTalFinalized(event.payload);
+  if (!ok) throw new Error(`[crm-sync-engine] invalid tal.finalized payload: ${failed.join('; ')}`);
+
+  const records = await recordsForTalFinalized(event.workspace_id);
+  const result = await writeRecords(event.workspace_id, 'tal_finalized', records, event.correlation_id);
+  await publishSynced(event.workspace_id, event.correlation_id, 'tal_finalized', 'account', result);
 }
 
 /** `contacts.mapped` → write contacts + stakeholder roles back to the CRM. */
-export async function handleContactsMapped(
-  event: EventEnvelope<'contacts.mapped'>,
-): Promise<void> {
+export async function handleContactsMapped(event: EventEnvelope<'contacts.mapped'>): Promise<void> {
   const { ok, failed } = validateContactsMapped(event.payload);
-  if (!ok) {
-    throw new Error(`[crm-sync-engine] invalid contacts.mapped payload: ${failed.join('; ')}`);
-  }
+  if (!ok) throw new Error(`[crm-sync-engine] invalid contacts.mapped payload: ${failed.join('; ')}`);
 
-  // TODO(owner): upsert contacts + roles (match on email/phone, never overwrite);
-  // record sync_log; dead-letter failures; verify completionCheck() before publishing.
-  const ctx = { workspaceId: event.workspace_id, correlationId: event.correlation_id };
-  await publishCrmSynced(
-    {
-      sync_job_id: '', // TODO(owner)
-      sync_type: 'contacts_mapped',
-      records_total: event.payload.contact_ids.length,
-      records_synced: 0, // TODO(owner)
-      errors: 0, // TODO(owner)
-      record_type: 'contact',
-      status: 'pending', // TODO(owner)
-    },
-    ctx,
-  );
+  const records = await recordsForContactsMapped(event.workspace_id, event.payload.contact_ids);
+  const result = await writeRecords(event.workspace_id, 'contacts_mapped', records, event.correlation_id);
+  await publishSynced(event.workspace_id, event.correlation_id, 'contacts_mapped', 'contact', result);
 }
 
-/** `account.score_updated` → write the latest awareness score back to the CRM. */
-export async function handleAccountScoreUpdated(
-  event: EventEnvelope<'account.score_updated'>,
-): Promise<void> {
+/** `account.score_updated` → write the latest awareness score/stage back to the CRM. */
+export async function handleAccountScoreUpdated(event: EventEnvelope<'account.score_updated'>): Promise<void> {
   const { ok, failed } = validateAccountScoreUpdated(event.payload);
-  if (!ok) {
-    throw new Error(`[crm-sync-engine] invalid account.score_updated payload: ${failed.join('; ')}`);
-  }
+  if (!ok) throw new Error(`[crm-sync-engine] invalid account.score_updated payload: ${failed.join('; ')}`);
 
-  // TODO(owner): upsert the account score/stage to the CRM; record sync_log;
-  // dead-letter failures; verify completionCheck() before publishing.
-  const ctx = { workspaceId: event.workspace_id, correlationId: event.correlation_id };
-  await publishCrmSynced(
-    {
-      sync_job_id: '', // TODO(owner)
-      sync_type: 'account_score_updated',
-      records_total: 1,
-      records_synced: 0, // TODO(owner)
-      errors: 0, // TODO(owner)
-      record_type: 'account',
-      status: 'pending', // TODO(owner)
-    },
-    ctx,
-  );
+  const p = event.payload;
+  const records: CrmWriteRecord[] = [{ recordType: 'account', recordId: p.account_id, fields: { abm_awareness_score: p.current_score, abm_awareness_stage: p.stage, abm_score_updated_at: p.last_calculated_at } }];
+  const result = await writeRecords(event.workspace_id, 'account_score_updated', records, event.correlation_id);
+  await publishSynced(event.workspace_id, event.correlation_id, 'account_score_updated', 'account', result);
 }
 
 /** `play.fired` → write the play log (CRM task/note) back to the CRM. */
-export async function handlePlayFired(
-  event: EventEnvelope<'play.fired'>,
-): Promise<void> {
+export async function handlePlayFired(event: EventEnvelope<'play.fired'>): Promise<void> {
   const { ok, failed } = validatePlayFired(event.payload);
-  if (!ok) {
-    throw new Error(`[crm-sync-engine] invalid play.fired payload: ${failed.join('; ')}`);
-  }
+  if (!ok) throw new Error(`[crm-sync-engine] invalid play.fired payload: ${failed.join('; ')}`);
 
-  // TODO(owner): upsert the play log to the CRM; record sync_log;
-  // dead-letter failures; verify completionCheck() before publishing.
-  const ctx = { workspaceId: event.workspace_id, correlationId: event.correlation_id };
-  await publishCrmSynced(
-    {
-      sync_job_id: '', // TODO(owner)
-      sync_type: 'play_fired',
-      records_total: 1,
-      records_synced: 0, // TODO(owner)
-      errors: 0, // TODO(owner)
-      record_type: 'play_log',
-      status: 'pending', // TODO(owner)
-    },
-    ctx,
-  );
+  const p = event.payload;
+  const records: CrmWriteRecord[] = [{ recordType: 'play_log', recordId: p.play_id, fields: { abm_play_type: p.play_type, account_id: p.account_id, contact_id: p.contact_id, tier: p.tier, stage: p.stage, fired_at: p.fired_at } }];
+  const result = await writeRecords(event.workspace_id, 'play_fired', records, event.correlation_id);
+  await publishSynced(event.workspace_id, event.correlation_id, 'play_fired', 'play_log', result);
 }

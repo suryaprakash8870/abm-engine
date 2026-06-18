@@ -198,17 +198,19 @@
 ---
 
 ## Phase 8 — Engine 10 CRM Sync
-- [ ] Prisma models (crm_connections, sync_jobs, sync_log, field_mappings, webhook_subscriptions)
-- [ ] Batch write queue
-- [ ] Rate limiter (token bucket, 8 req/sec)
-- [ ] OAuth token refresh + AES-256 encryption
-- [ ] HubSpot batch write
-- [ ] Inbound deal webhook → closed_won/lost events
-- [ ] Dead-letter queue + retry
-- [ ] Auto-create missing properties
-- [ ] Sync log UI
-- [ ] `crm.synced`, `crm.deal_closed_won/lost` publishers
-- [ ] Integration test + health check
+- [x] Prisma models (crm_connections, sync_jobs, sync_log, field_mappings, webhook_subscriptions) — all workspace-scoped (migration 20260618100203); idempotency keys on sync_jobs (workspace,type,correlation) + sync_log (workspace,job,record)
+- [x] Batch writes (batchByType, 100/batch) via a CrmAdapter interface (MockHubspotAdapter — deterministic, network-free; real adapter swaps in behind the interface)
+- [x] Rate limiter (Redis token bucket, 8 req/sec)
+- [~] OAuth token refresh + AES-256 encryption — AES-256-GCM token encryption DONE (verified: ciphertext at rest); live OAuth/refresh deferred (mock connect)
+- [x] HubSpot batch write (mocked adapter; sync_log audit row per record; idempotent upsert)
+- [x] Inbound deal webhook → crm.deal_closed_won/lost (domain→account resolution; open stages skipped)
+- [x] Dead-letter (failed records → sync_log outcome 'dead_lettered' + error count; completion gate)
+- [~] Auto-create missing properties — deferred (mock adapter accepts any field)
+- [x] Sync log UI (/integrations — connection status + connect/disconnect + sync-log table)
+- [x] `crm.synced` (verify-before-publish), `crm.deal_closed_won/lost` publishers; 6 API routes (oauth connect/callback/disconnect, deal webhook, sync-log, connection)
+- [x] 6 integration tests (batching, deal parsing, AES roundtrip, completion gate, handler) + health check
+- VERIFIED end-to-end: signal → account.score_updated → CRM write logged (account/success) + crm.synced, 0 dead-letters; inbound WON deal (cobalt.com $50k) → resolved to account → crm.deal_closed_won consumed by gtm-flywheel (11) + icp-engine (01) — THE FEEDBACK LOOP CLOSES; LOST→null account, OPEN→no event; mock-connect stores AES-encrypted tokens.
+- Audit (2026-06-18): 6-dim × 2-lens review → 26 raw findings. Fixed the real ones: deal-webhook HMAC signature verification + portalId→workspace resolution (was ?ws= spoofable), deal re-delivery dedup on (deal,resolution) — verified live (2nd POST deduped, no revenue double-count), payload validation (missing deal_id→400), token now decrypted (was returning ciphertext), ENCRYPTION_KEY fail-closed in prod, idempotency columns NOT NULL (migration), GET→POST connect (CSRF). Rejected FPs: the "'won' matches 'closedlost'" regex bug (verified all standard stages resolve correctly), the where-clause "bypass", at-least-once re-publish (accepted), partial-batch completion semantics.
 
 ---
 

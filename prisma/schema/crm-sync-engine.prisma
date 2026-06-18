@@ -1,74 +1,81 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Engine 10 — CRM Sync Engine · owned by <unassigned>
+// Engine 10 — CRM Sync Engine.
 //
-// Tables this engine owns (no other engine queries them directly; other engines
-// listen to this engine's events and keep their own local copies).
-//
-// TODO(owner): define models + add workspaceId + a Supabase RLS policy on each.
-//
-// The models below are COMMENTED OUT so this file stays valid-but-empty until the
-// owner fills them in. A Prisma schema file containing only comments is valid.
-// Follow the foundation conventions (see schema.prisma): String @id @default(cuid()),
-// @map("snake_case") column names, @@map("snake_case") table names, and a
-// `workspaceId String @map("workspace_id")` column on every table.
+// The ONLY engine that writes to the CRM (rule #8). Consumes write events from
+// upstream engines, batches + rate-limits + upserts them, logs every operation,
+// and emits crm.synced; also turns inbound deal webhooks into closed-won/lost.
+// Tables this engine owns (no other engine queries them directly). Every table is
+// workspace-scoped. OAuth tokens are AES-256-GCM encrypted at rest — never plain.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// crm_connections — one row per connected CRM per workspace (tokens encrypted at rest).
-// model CrmConnection {
-//   id              String   @id @default(cuid())
-//   workspaceId     String   @map("workspace_id")
-//   crmType         String   @map("crm_type")            // 'hubspot' | 'salesforce'
-//   accessTokenEnc  String   @map("access_token_enc")    // AES-256 encrypted
-//   refreshTokenEnc String   @map("refresh_token_enc")   // AES-256 encrypted
-//   expiresAt       DateTime @map("expires_at")
-//   portalId        String?  @map("portal_id")
-//   instanceUrl     String?  @map("instance_url")
-//   isActive        Boolean  @default(true) @map("is_active")
-//   connectedAt     DateTime @default(now()) @map("connected_at")
-//   @@map("crm_connections")
-// }
+model CrmConnection {
+  id              String   @id @default(cuid())
+  workspaceId     String   @map("workspace_id")
+  crmType         String   @map("crm_type") // hubspot | salesforce
+  accessTokenEnc  String   @map("access_token_enc")
+  refreshTokenEnc String   @map("refresh_token_enc")
+  expiresAt       DateTime @map("expires_at")
+  portalId        String?  @map("portal_id")
+  instanceUrl     String?  @map("instance_url")
+  isActive        Boolean  @default(true) @map("is_active")
+  connectedAt     DateTime @default(now()) @map("connected_at")
 
-// sync_jobs — one row per batch sync run, tracking progress + error counts.
-// model SyncJob {
-//   id            String @id @default(cuid())
-//   workspaceId   String @map("workspace_id")
-//   syncType      String @map("sync_type")
-//   status        String                                // 'running' | 'completed' | 'failed'
-//   recordsTotal  Int    @default(0) @map("records_total")
-//   recordsSynced Int    @default(0) @map("records_synced")
-//   errors        Int    @default(0)
-//   @@map("sync_jobs")
-// }
+  @@unique([workspaceId, crmType]) // one connection per CRM per workspace
+  @@index([workspaceId])
+  @@map("crm_connections")
+}
 
-// sync_log — user-facing audit log: one row per write operation.
-// model SyncLog {
-//   id          String   @id @default(cuid())
-//   workspaceId String   @map("workspace_id")
-//   recordType  String   @map("record_type")
-//   recordId    String   @map("record_id")
-//   operation   String                                  // 'create' | 'update' | 'upsert'
-//   outcome     String                                  // 'success' | 'failed' | 'dead_lettered'
-//   apiResponse Json     @map("api_response")           // JSONB
-//   syncedAt    DateTime @default(now()) @map("synced_at")
-//   @@map("sync_log")
-// }
+model SyncJob {
+  id            String    @id @default(cuid())
+  workspaceId   String    @map("workspace_id")
+  syncType      String    @map("sync_type")
+  status        String    @default("running") // running | completed | partial | failed
+  recordsTotal  Int       @default(0) @map("records_total")
+  recordsSynced Int       @default(0) @map("records_synced")
+  errors        Int       @default(0)
+  correlationId String    @map("correlation_id") // always set (source event id); NOT NULL so the unique key actually dedups
+  startedAt     DateTime  @default(now()) @map("started_at")
+  completedAt   DateTime? @map("completed_at")
 
-// field_mappings — ABM-field → CRM-field mapping per CRM per workspace.
-// model FieldMapping {
-//   id          String @id @default(cuid())
-//   workspaceId String @map("workspace_id")
-//   crmType     String @map("crm_type")
-//   abmField    String @map("abm_field")
-//   crmField    String @map("crm_field")
-//   @@map("field_mappings")
-// }
+  @@unique([workspaceId, syncType, correlationId]) // idempotency: one job per source event
+  @@index([workspaceId])
+  @@map("sync_jobs")
+}
 
-// webhook_subscriptions — inbound CRM webhook registrations (e.g. deal stage changes).
-// model WebhookSubscription {
-//   id             String @id @default(cuid())
-//   workspaceId    String @map("workspace_id")
-//   crmType        String @map("crm_type")
-//   eventType      String @map("event_type")
-//   subscriptionId String @map("subscription_id")
-//   @@map("webhook_subscriptions")
-// }
+model SyncLog {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  syncJobId   String   @map("sync_job_id") // always set; NOT NULL so the unique key actually dedups
+  recordType  String   @map("record_type")
+  recordId    String   @map("record_id")
+  operation   String // create | update | upsert
+  outcome     String // success | failed | dead_lettered
+  apiResponse Json     @map("api_response")
+  syncedAt    DateTime @default(now()) @map("synced_at")
+
+  @@unique([workspaceId, syncJobId, recordId]) // idempotent re-run of the same job
+  @@index([workspaceId, syncedAt])
+  @@map("sync_log")
+}
+
+model FieldMapping {
+  id          String @id @default(cuid())
+  workspaceId String @map("workspace_id")
+  crmType     String @map("crm_type")
+  abmField    String @map("abm_field")
+  crmField    String @map("crm_field")
+
+  @@index([workspaceId])
+  @@map("field_mappings")
+}
+
+model WebhookSubscription {
+  id             String @id @default(cuid())
+  workspaceId    String @map("workspace_id")
+  crmType        String @map("crm_type")
+  eventType      String @map("event_type")
+  subscriptionId String @map("subscription_id")
+
+  @@index([workspaceId])
+  @@map("webhook_subscriptions")
+}
