@@ -215,17 +215,19 @@
 ---
 
 ## Phase 9 — Engine 11 GTM Flywheel
-- [ ] Prisma models (pipeline_snapshots, attribution_events, win_loss_analysis, flywheel_metrics, signal_correlation_data)
-- [ ] Attribution model (walk back signal timeline)
-- [ ] Pipeline-by-tier calculation
-- [ ] Win rate by tier
-- [ ] Signal correlation analysis (min 20 deals)
-- [ ] ICP refresh trigger (every 5th closed-won)
-- [ ] Claude Sonnet ICP refresh analysis
-- [ ] Weekly digest email
-- [ ] Reporting/Insights UI
-- [ ] `flywheel.metrics_updated`, `icp.refresh_recommended` publishers
-- [ ] Integration test + health check
+- [x] Prisma models (pipeline_snapshots, attribution_events, win_loss_analysis, flywheel_metrics, signal_correlation_data) — all workspace-scoped (migration 20260618_gtm_flywheel); win_loss idempotent on (workspace,deal)
+- [x] Attribution model (walk back signal + play timeline cross-engine; first/last/linear, days-to-close)
+- [x] Pipeline-by-tier calculation (pipeline / win-rate / avg-deal-size / days-to-close by tier → pipeline_snapshots + flywheel_metrics)
+- [x] Win rate by tier
+- [x] Signal correlation analysis with the ≥20-deal suppression gate ("more data needed" below 20)
+- [x] ICP refresh trigger every 5th closed-won — ATOMIC (advisory-lock + watermark band claim, concurrency-safe; fires exactly once per 5-band)
+- [~] Claude Sonnet ICP refresh analysis — deterministic fallback summary (LLM refinement deferred, like other engines)
+- [~] Weekly digest email — sendWeeklyDigest stub (Resend deferred)
+- [x] Reporting/Insights UI (/insights — pipeline-by-tier cards, correlation panel with data-gate, attribution timelines)
+- [x] `flywheel.metrics_updated`, `icp.refresh_recommended` publishers (+ flywheel.error on completion-fail); 6 tests + health
+- [x] 4 API routes (pipeline/attribution/correlation/metrics); 6 passive handlers (validate + no-op, never block)
+- VERIFIED end-to-end: 5 won deals → attribution built (60 touches), pipeline $275k/tier-1, win-rate 100%; the 5th win fired icp.refresh_recommended → consumed by icp-engine (01) — THE LEARNING LOOP CLOSES. 0 dead-letters.
+- Live-caught + fixed: every-5th cadence fired 4× for 5 concurrent wins (TOCTOU race on the count) → atomic watermark band claim; re-verified EXACTLY 1 fire for 5 wins.
 
 ---
 

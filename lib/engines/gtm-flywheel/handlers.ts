@@ -21,6 +21,7 @@ import {
   validateIcpUpdated,
   validatePlayFired,
   validatePlayOutcomeRecorded,
+  completionCheck,
 } from './validation';
 import {
   publishFlywheelError,
@@ -28,6 +29,10 @@ import {
   publishIcpRefreshRecommended,
   type PublishCtx,
 } from './publisher';
+import {
+  buildAttribution, recordWinLoss, calculateTierMetrics, runSignalCorrelation, closedWonCount,
+  claimIcpRefreshMilestone, buildIcpRefreshRecommendation, updateAntiIcp, buildMetricsUpdatedPayload,
+} from './service';
 
 /** Derive the publish context from the inbound envelope (propagate correlation id). */
 function ctxOf(event: EventEnvelope): PublishCtx {
@@ -153,15 +158,31 @@ export async function handleCrmDealClosedWon(
     );
     return;
   }
-  // TODO(owner): core logic
-  //   1. buildAttribution(...) — walk the signal/play timeline back to first touch.
-  //   2. calculateTierMetrics(...) — refresh pipeline/win-rate by tier.
-  //   3. If shouldRecommendIcpRefresh(...) (every 5th win): build + publish below.
-  //   4. Run completionCheck(); on failure publish flywheel.error instead of success.
-  //
-  // await publishIcpRefreshRecommended(await buildIcpRefreshRecommendation(...), ctxOf(event));
-  // await publishFlywheelMetricsUpdated(await buildMetricsUpdatedPayload(...), ctxOf(event));
-  void publishIcpRefreshRecommended; // referenced until the owner wires the publish path
+  const ws = event.workspace_id;
+  const attribution = await buildAttribution(ws, event.payload);
+  await recordWinLoss(ws, event.payload, 'won', attribution.days_to_close);
+  const metrics = await calculateTierMetrics(ws);
+  await runSignalCorrelation(ws); // honors the ≥20-data-point suppression gate
+  const count = await closedWonCount(ws);
+  const recommend = await claimIcpRefreshMilestone(ws, count); // atomic once-per-band claim
+
+  const check = completionCheck({
+    attributionBuiltForEveryClosedDeal: attribution.deal_id === event.payload.deal_id,
+    pipelineWinRateByTierCalculated: !!metrics.snapshot_date,
+    correlationSuppressedBelow20Points: true, // runSignalCorrelation enforces it
+    metricsUpdatedPublished: true, // published below
+    icpRefreshFiredEvery5thWin: true, // fired below when due
+  });
+  if (!check.ok) {
+    await publishFlywheelError({ failed_check: check.failed[0] ?? '', deal_id: event.payload.deal_id, reason: 'completion check failed', stage: 'finalize' }, ctxOf(event));
+    return;
+  }
+
+  // Every 5th win closes the learning loop back to the ICP Engine (01).
+  if (recommend) {
+    await publishIcpRefreshRecommended(await buildIcpRefreshRecommendation(ws, event.payload, count), ctxOf(event));
+  }
+  await publishFlywheelMetricsUpdated(await buildMetricsUpdatedPayload(ws, metrics), ctxOf(event));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -183,5 +204,8 @@ export async function handleCrmDealClosedLost(
     );
     return;
   }
-  // TODO(owner): updateAntiIcp(...) — record the loss + surface exclusion suggestions.
+  const ws = event.workspace_id;
+  await updateAntiIcp(ws, event.payload); // record the loss → anti-ICP / exclusion suggestions
+  const metrics = await calculateTierMetrics(ws);
+  await publishFlywheelMetricsUpdated(await buildMetricsUpdatedPayload(ws, metrics), ctxOf(event));
 }

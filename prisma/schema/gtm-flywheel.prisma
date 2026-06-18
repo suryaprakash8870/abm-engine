@@ -1,78 +1,81 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Engine 11 — GTM Flywheel (attribution, insights, ICP feedback loop)
-// Owned by <unassigned>
+// Engine 11 — GTM Flywheel (attribution, insights, ICP feedback loop).
 //
-// TODO(owner): define models + add workspaceId + RLS (Supabase Row-Level Security).
-//
-// This file is intentionally comments-only for now — a Prisma schema folder file
-// with no uncommented blocks is valid. Uncomment + flesh out each model when the
-// owner starts. Every table MUST carry `workspaceId` and a matching RLS policy
-// (CLAUDE.md). No other engine queries these tables directly — they listen to
-// this engine's events and keep their own local copies.
-//
-// Tables this engine owns (docs/engines/engine-11-gtm-flywheel.md):
-//   pipeline_snapshots, attribution_events, win_loss_analysis,
-//   flywheel_metrics, signal_correlation_data
+// Closes the learning loop: on every closed deal it walks back attribution,
+// recomputes pipeline/win-rate by tier, and after every 5th win recommends an ICP
+// refresh back to Engine 01. Tables this engine owns (no other engine queries them
+// directly). Every table is workspace-scoped. Idempotent on deal_id so a
+// re-delivered deal event can't double-count revenue.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// model PipelineSnapshot {
-//   id                   String   @id @default(cuid())
-//   workspaceId          String   @map("workspace_id")
-//   date                 DateTime
-//   pipelineByTier       Json     @map("pipeline_by_tier")
-//   winRateByTier        Json     @map("win_rate_by_tier")
-//   avgDealSizeByTier    Json     @map("avg_deal_size_by_tier")
-//
-//   @@index([workspaceId, date])
-//   @@map("pipeline_snapshots")
-// }
+model PipelineSnapshot {
+  id                String   @id @default(cuid())
+  workspaceId       String   @map("workspace_id")
+  date              DateTime @db.Date
+  pipelineByTier    Json     @map("pipeline_by_tier")
+  winRateByTier     Json     @map("win_rate_by_tier")
+  avgDealSizeByTier Json     @map("avg_deal_size_by_tier")
+  daysToCloseByTier Json     @map("days_to_close_by_tier")
 
-// model AttributionEvent {
-//   id                       String   @id @default(cuid())
-//   workspaceId              String   @map("workspace_id")
-//   accountId                String   @map("account_id")
-//   dealId                   String   @map("deal_id")
-//   touchType                String   @map("touch_type")
-//   signalId                 String?  @map("signal_id")
-//   occurredBeforePipeline   Boolean  @map("occurred_before_pipeline")
-//   recordedAt               DateTime @default(now()) @map("recorded_at")
-//
-//   @@index([workspaceId, dealId])
-//   @@map("attribution_events")
-// }
+  @@unique([workspaceId, date]) // one snapshot per day
+  @@index([workspaceId, date])
+  @@map("pipeline_snapshots")
+}
 
-// model WinLossAnalysis {
-//   id                 String   @id @default(cuid())
-//   workspaceId        String   @map("workspace_id")
-//   dealId             String   @map("deal_id")
-//   outcome            String   // 'won' | 'lost'
-//   accountAttributes  Json     @map("account_attributes")
-//   analyzedAt         DateTime @default(now()) @map("analyzed_at")
-//
-//   @@index([workspaceId, outcome])
-//   @@map("win_loss_analysis")
-// }
+model AttributionEvent {
+  id                     String   @id @default(cuid())
+  workspaceId            String   @map("workspace_id")
+  accountId              String   @map("account_id")
+  dealId                 String   @map("deal_id")
+  touchType              String   @map("touch_type") // signal | play
+  touchSubtype           String?  @map("touch_subtype")
+  signalId               String?  @map("signal_id")
+  weight                 Float    @default(0) // linear-attribution weight
+  occurredBeforePipeline Boolean  @map("occurred_before_pipeline")
+  occurredAt             DateTime @map("occurred_at")
+  recordedAt             DateTime @default(now()) @map("recorded_at")
 
-// model FlywheelMetric {
-//   id            String   @id @default(cuid())
-//   workspaceId   String   @map("workspace_id")
-//   metricKey     String   @map("metric_key")
-//   value         Float
-//   period        String
-//   calculatedAt  DateTime @default(now()) @map("calculated_at")
-//
-//   @@index([workspaceId, metricKey, period])
-//   @@map("flywheel_metrics")
-// }
+  @@index([workspaceId, dealId])
+  @@map("attribution_events")
+}
 
-// model SignalCorrelationData {
-//   id                  String   @id @default(cuid())
-//   workspaceId         String   @map("workspace_id")
-//   signalCombination   String[] @map("signal_combination")
-//   correlationScore    Float    @map("correlation_score")
-//   sampleSize          Int      @map("sample_size")
-//   calculatedAt        DateTime @default(now()) @map("calculated_at")
-//
-//   @@index([workspaceId])
-//   @@map("signal_correlation_data")
-// }
+model WinLossAnalysis {
+  id                String   @id @default(cuid())
+  workspaceId       String   @map("workspace_id")
+  dealId            String   @map("deal_id")
+  accountId         String?  @map("account_id")
+  outcome           String // won | lost
+  amount            Float?
+  accountAttributes Json     @map("account_attributes") // { tier, domain, days_to_close, owner_id }
+  closedAt          DateTime @map("closed_at")
+  analyzedAt        DateTime @default(now()) @map("analyzed_at")
+
+  @@unique([workspaceId, dealId]) // idempotent: one analysis per deal
+  @@index([workspaceId, outcome])
+  @@map("win_loss_analysis")
+}
+
+model FlywheelMetric {
+  id           String   @id @default(cuid())
+  workspaceId  String   @map("workspace_id")
+  metricKey    String   @map("metric_key")
+  value        Float
+  period       String
+  calculatedAt DateTime @default(now()) @map("calculated_at")
+
+  @@unique([workspaceId, metricKey, period]) // upsert keyed metrics
+  @@index([workspaceId, metricKey, period])
+  @@map("flywheel_metrics")
+}
+
+model SignalCorrelationData {
+  id               String   @id @default(cuid())
+  workspaceId      String   @map("workspace_id")
+  signalCombination String[] @map("signal_combination")
+  correlationScore Float    @map("correlation_score")
+  sampleSize       Int      @map("sample_size")
+  calculatedAt     DateTime @default(now()) @map("calculated_at")
+
+  @@index([workspaceId])
+  @@map("signal_correlation_data")
+}
