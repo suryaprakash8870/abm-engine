@@ -17,8 +17,7 @@
 
 import type { EventEnvelope } from '../../events';
 import { validateContactsMapped } from './validation';
-// import { publishSignalReceived } from './publisher';
-// import { storeSignal, normaliseSignal } from './service';
+import { setAccountAttribution } from './service';
 
 /**
  * Handle `contacts.mapped` from the Contact Engine. We refresh the
@@ -37,9 +36,9 @@ export async function handleContactsMapped(
     throw new Error(`[signal-engine] invalid contacts.mapped payload: ${errors.join('; ')}`);
   }
 
-  // TODO(owner): persist/refresh the account→contacts attribution map for
-  // event.payload.account_id using event.payload.contact_ids / dm_contact_ids /
-  // champion_contact_ids / influencer_contact_ids, scoped to event.workspace_id.
-  // Used later by normaliseSignal() to set contact_id on inbound signals.
-  // No downstream event is published from this handler.
+  // Cache the account's primary contact (the decision-maker, else first mapped)
+  // so subsequently-received signals for this account attribute to a contact_id.
+  // Best-effort + no downstream event — signals publish from the HTTP intake path.
+  const primary = event.payload.dm_contact_ids?.[0] ?? event.payload.contact_ids?.[0] ?? null;
+  await setAccountAttribution(event.workspace_id, event.payload.account_id, primary);
 }

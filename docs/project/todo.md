@@ -149,19 +149,20 @@
 ---
 
 ## Phase 5 — Engine 07 Signal Engine
-- [ ] Prisma models (signals, signal_sources, webhook_log, tracking_tokens, visitor_sessions)
-- [ ] JS tracking snippet (`public/tracker.js`)
-- [ ] Signal intake endpoint
-- [ ] RB2B client + IP identification
-- [ ] Clearbit Reveal fallback
-- [ ] High-intent page detection
-- [ ] HubSpot webhook handler + signature verify
-- [ ] Outreach webhook handler
-- [ ] Signal normaliser
-- [ ] Dedup cache (Redis, 5-min window)
-- [ ] Snippet install UI + test button
-- [ ] `signal.received` publisher
-- [ ] Integration test + health check
+- [x] Prisma models (signals, signal_sources, webhook_log, tracking_tokens, visitor_sessions) — all workspace-scoped (migration 20260618_signal_engine); signals unique on (workspace_id, dedup_key)
+- [x] JS tracking snippet (`public/tracker.js` + served per-token at /api/v1/signals/snippet/:token)
+- [x] Signal intake endpoint (POST /signals/track — public, token-auth, CORS, verify-before-publish)
+- [~] IP→company resolution — mock RB2B (deterministic) in resolveHitToAccount; real RB2B/Clearbit Reveal is a swap-in (no key on MVP)
+- [x] High-intent page detection (classifyPageIntent — pricing/demo/comparison/roi weighted higher)
+- [x] HubSpot webhook handler + HMAC signature verify (dev-bypass only outside production)
+- [x] Outreach webhook handler (shared webhook-intake)
+- [x] Signal normaliser + dedup key (account + type + 5-min bucket)
+- [x] Dedup cache (Redis SET NX EX 300) + DB unique backstop
+- [x] Snippet install UI + Test button + live signal feed (/signals)
+- [x] `signal.received` publisher (per signal; only when stored fresh) + rolling decayed score (read side)
+- [x] 6 integration tests + health check
+- VERIFIED end-to-end: 3 website hits via the public /track endpoint → pricing(25)/demo(30)/content(3) stored, repeat pricing deduplicated; signal.received consumed cleanly by awareness-engine (08), 0 dead-letters. contacts.mapped sets contact attribution.
+- Audit (2026-06-18): 2 independent reviewers on the public surface → fixed webhook dev-bypass-in-prod, sig-before-token ordering, public-input size caps, defensive decay clamp. (Rate-limiting on /track noted as a v2 infra item.)
 
 ---
 

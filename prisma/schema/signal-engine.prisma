@@ -1,73 +1,77 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Engine 07 — Signal Engine — owned by <unassigned>
+// Engine 07 — Signal Engine (always-on).
 //
-// Tables this engine owns (no other engine queries them directly — they listen
-// to this engine's events and keep local copies). The stubs below are
-// COMMENTED-OUT so this file is valid-but-empty until the owner fills them in.
-//
-// TODO(owner): define models + add workspaceId + RLS (Supabase policy per table).
-//
-// Columns come from docs/engines/engine-07-signal-engine.md ("Database tables").
-// `signals.dedup_key` must be UNIQUE (idempotency: prevents double-counting on a
-// dedup-cache miss). `visitor_sessions.ip_hash` stores a hash, never a raw IP.
+// Tracks buying signals (website hits, CRM/email webhooks), resolves each to a
+// TAL account, normalises + deduplicates, and publishes signal.received. Tables
+// this engine owns (no other engine queries them directly). Every table is
+// workspace-scoped (rule #3). signals.(workspace_id, dedup_key) is UNIQUE — the
+// durable idempotency backstop on a dedup-cache miss.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// model Signal {
-//   id               String   @id @default(cuid())
-//   workspaceId      String   @map("workspace_id")
-//   accountId        String   @map("account_id")
-//   contactId        String?  @map("contact_id")
-//   signalType       String   @map("signal_type")
-//   signalSource     String   @map("signal_source")
-//   pointsAwarded    Int      @map("points_awarded")
-//   decayRatePerWeek Float    @map("decay_rate_per_week")
-//   pageUrl          String?  @map("page_url")
-//   metadata         Json?
-//   dedupKey         String   @unique @map("dedup_key") // idempotency key
-//   occurredAt       DateTime @map("occurred_at")
-//   receivedAt       DateTime @default(now()) @map("received_at")
-//
-//   @@index([workspaceId, accountId])
-//   @@map("signals")
-// }
+model Signal {
+  id               String   @id @default(cuid())
+  workspaceId      String   @map("workspace_id")
+  accountId        String   @map("account_id")
+  contactId        String?  @map("contact_id")
+  signalType       String   @map("signal_type")
+  signalSource     String   @map("signal_source")
+  pointsAwarded    Int      @map("points_awarded")
+  decayRatePerWeek Float    @map("decay_rate_per_week")
+  pageUrl          String?  @map("page_url")
+  metadata         Json?
+  dedupKey         String   @map("dedup_key")
+  occurredAt       DateTime @map("occurred_at")
+  receivedAt       DateTime @default(now()) @map("received_at")
 
-// model SignalSource {
-//   id          String  @id @default(cuid())
-//   workspaceId String  @map("workspace_id")
-//   sourceType  String  @map("source_type")
-//   config      Json?
-//   isActive    Boolean @default(true) @map("is_active")
-//
-//   @@map("signal_sources")
-// }
+  @@unique([workspaceId, dedupKey]) // idempotency: one signal per (account, type, 5-min bucket)
+  @@index([workspaceId, accountId])
+  @@index([workspaceId, occurredAt])
+  @@map("signals")
+}
 
-// model WebhookLog {
-//   id             String   @id @default(cuid())
-//   source         String
-//   payload        Json?
-//   signatureValid Boolean  @map("signature_valid")
-//   processedAt    DateTime @default(now()) @map("processed_at")
-//
-//   @@map("webhook_log")
-// }
+model SignalSource {
+  id          String  @id @default(cuid())
+  workspaceId String  @map("workspace_id")
+  sourceType  String  @map("source_type")
+  config      Json?
+  isActive    Boolean @default(true) @map("is_active")
 
-// model TrackingToken {
-//   id          String   @id @default(cuid())
-//   workspaceId String   @map("workspace_id")
-//   token       String   @unique
-//   createdAt   DateTime @default(now()) @map("created_at")
-//
-//   @@map("tracking_tokens")
-// }
+  @@index([workspaceId])
+  @@map("signal_sources")
+}
 
-// model VisitorSession {
-//   id          String   @id @default(cuid())
-//   workspaceId String   @map("workspace_id")
-//   sessionId   String   @map("session_id")
-//   accountId   String?  @map("account_id")
-//   ipHash      String   @map("ip_hash")
-//   firstSeen   DateTime @default(now()) @map("first_seen")
-//   lastSeen    DateTime @default(now()) @map("last_seen")
-//
-//   @@map("visitor_sessions")
-// }
+model WebhookLog {
+  id             String   @id @default(cuid())
+  workspaceId    String?  @map("workspace_id")
+  source         String
+  payload        Json?
+  signatureValid Boolean  @map("signature_valid")
+  processedAt    DateTime @default(now()) @map("processed_at")
+
+  @@index([workspaceId])
+  @@map("webhook_log")
+}
+
+model TrackingToken {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  token       String   @unique
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([workspaceId]) // one active tracking token per workspace
+  @@map("tracking_tokens")
+}
+
+model VisitorSession {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  sessionId   String   @map("session_id")
+  accountId   String?  @map("account_id")
+  ipHash      String   @map("ip_hash")
+  firstSeen   DateTime @default(now()) @map("first_seen")
+  lastSeen    DateTime @default(now()) @map("last_seen")
+
+  @@unique([workspaceId, sessionId])
+  @@index([workspaceId, accountId])
+  @@map("visitor_sessions")
+}
