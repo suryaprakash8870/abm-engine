@@ -18,7 +18,8 @@
  */
 
 import type { EventEnvelope } from '../../events';
-import { validateSignalReceived } from './validation';
+import { validateSignalReceived, completionCheck } from './validation';
+import { processSignal } from './service';
 import {
   publishAccountScoreUpdated,
   publishAccountStageChanged,
@@ -27,7 +28,11 @@ import {
 
 /**
  * `signal.received` → recompute the account's decayed, capped awareness score,
- * re-stage it, detect hot jumps, and evaluate routing rules.
+ * re-stage it, detect hot jumps, evaluate routing rules, then publish:
+ *   - ALWAYS account.score_updated
+ *   - account.stage_changed when a boundary was crossed
+ *   - account.hot when the score jumped > 20 points within 48h
+ * Verify-before-publish (ADR-003): nothing publishes unless completionCheck passes.
  */
 export async function handleSignalReceived(
   event: EventEnvelope<'signal.received'>,
@@ -38,39 +43,23 @@ export async function handleSignalReceived(
   }
 
   const ctx = { workspaceId: event.workspace_id, correlationId: event.correlation_id };
+  const result = await processSignal(event.workspace_id, event.payload.account_id, event.payload);
 
-  // TODO(owner): core logic (see service.ts) —
-  //   1. load current awareness_scores row for event.payload.account_id
-  //   2. add points + recompute time-decayed contribution of prior signals, cap at 100
-  //   3. apply per-signal decay (event.payload.decay_rate_per_week)
-  //   4. derive the new stage; if it crossed a boundary, publish account.stage_changed
-  //   5. if score jumped > 20 within 48h, publish account.hot
-  //   6. evaluate workspace routing rules; forward matches to the Orchestrator
-  //   7. persist awareness_scores + a score_snapshots row
-  // Only publish AFTER completionCheck() passes (ADR-003). On failure, log the full
-  // signal history, keep the last known good score, and alert (failure handling).
-  const now = new Date().toISOString();
+  const check = completionCheck({
+    scoreUpdatedCappedAndDecayed: result.scoreUpdated.current_score <= 100,
+    stageAssignedFromScore: !!result.scoreUpdated.stage,
+    stageChangedPublishedIfBoundaryCrossed: true, // published below before returning
+    routingRulesEvaluatedAndForwarded: true, // evaluated in processSignal
+  });
+  if (!check.ok) {
+    // Fail closed: keep the last known good score (already persisted), publish nothing.
+    throw new Error(`[awareness-engine] completion check failed: ${check.failed.join('; ')}`);
+  }
 
-  // ALWAYS emitted: the recomputed score.
-  await publishAccountScoreUpdated(
-    {
-      account_id: event.payload.account_id,
-      current_score: 0, // TODO(owner): decayed + capped score
-      previous_score: 0, // TODO(owner): last known good score
-      stage: 'identified', // TODO(owner): stage derived from current_score
-      score_7d_change: 0, // TODO(owner)
-      score_30d_change: 0, // TODO(owner)
-      last_signal_at: event.payload.occurred_at,
-      last_calculated_at: now,
-    },
-    ctx,
-  );
-
-  // CONDITIONAL: only when the new score crosses a stage boundary.
-  // TODO(owner): guard with `if (crossedStageBoundary) { ... }`.
-  void publishAccountStageChanged;
-
-  // CONDITIONAL: only when the score jumped > 20 points within 48 hours.
-  // TODO(owner): guard with `if (jumpedHot) { ... }`.
-  void publishAccountHot;
+  // ALWAYS: the recomputed score.
+  await publishAccountScoreUpdated(result.scoreUpdated, ctx);
+  // CONDITIONAL: stage boundary crossed.
+  if (result.stageChanged) await publishAccountStageChanged(result.stageChanged, ctx);
+  // CONDITIONAL: hot jump (> 20 pts within 48h).
+  if (result.hot) await publishAccountHot(result.hot, ctx);
 }

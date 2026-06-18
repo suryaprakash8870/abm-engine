@@ -167,15 +167,17 @@
 ---
 
 ## Phase 6 — Engine 08 Awareness Engine
-- [ ] Prisma models (awareness_scores, score_snapshots, routing_rules, routing_rule_evaluations, stage_change_log)
-- [ ] Score calculation with decay
-- [ ] Daily decay job (BullMQ scheduled)
-- [ ] Stage assignment + change detection
-- [ ] Routing rule evaluator
-- [ ] Hot accounts feed UI
-- [ ] Score trend charts
-- [ ] `account.score_updated`, `account.stage_changed`, `account.hot` publishers
-- [ ] Integration test + health check
+- [x] Prisma models (awareness_scores, score_snapshots, routing_rules, routing_rule_evaluations, stage_change_log) — all workspace-scoped (migration 20260618074218)
+- [x] Score calculation with decay (recompute from the full signal history each time → exact + idempotent; capped at 100)
+- [x] Daily decay job (BullMQ repeatable, 00:00 UTC) — re-decays all accounts + publishes decay-driven stage changes
+- [x] Stage assignment + change detection (5-stage ladder 0/20/40/60/80; stage_change_log)
+- [x] Routing rule evaluator (trigger_config match + cooldown_days + max_per_month; only matched rules recorded)
+- [x] Hot accounts feed UI (/awareness — score bars, stage, 7d arrow, top signals) + routing-rule toggles
+- [x] Score trend (30-day snapshots via getScoreDetail; sparkline-ready history)
+- [x] `account.score_updated` (always), `account.stage_changed`, `account.hot` (>20pt jump in 48h) publishers
+- [x] 6 integration tests + health check; 5 API routes (feed/score/routing-rules CRUD)
+- VERIFIED end-to-end: signals → Cobalt AI score 100 (capped), stage "selecting", stage transition logged + snapshot written; account.score_updated/stage_changed/hot consumed cleanly by orchestrator (09) + crm-sync (10) + gtm-flywheel (11), 0 dead-letters.
+- Audit (2026-06-18): 2 independent reviewers → fixed hot detection to use the real 48h baseline, daily decay now publishes stage changes, routing skips non-match rows, workspace-scoped rule updates. (Rejected: "publish-before-persist" FP — persist commits before publish.)
 
 ---
 

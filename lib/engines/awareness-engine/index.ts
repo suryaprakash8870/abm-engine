@@ -16,6 +16,7 @@ import { prisma } from '../../db/client';
 import { pingRedis } from '../../clients/redis';
 import type { EngineModule, HealthStatus } from '../contract';
 import { handleSignalReceived } from './handlers';
+import { startDailyDecayJob } from './awareness-queue';
 
 const SLUG = 'awareness-engine' as const;
 
@@ -36,6 +37,7 @@ const awarenessEngine = {
    */
   register(): void {
     subscribeToEvent('signal.received', handleSignalReceived, { engine: SLUG });
+    startDailyDecayJob();
   },
 
   /**
