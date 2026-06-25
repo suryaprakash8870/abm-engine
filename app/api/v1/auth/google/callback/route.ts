@@ -7,7 +7,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { exchangeCodeForProfile } from '@/lib/auth/google';
+import { exchangeCodeForProfile, publicOrigin } from '@/lib/auth/google';
 import { findOrCreateOAuthUser } from '@/lib/auth/service';
 import { signSession, SESSION_COOKIE, SESSION_MAX_AGE } from '@/lib/auth/session';
 
@@ -21,7 +21,7 @@ function fail(origin: string, code: string): NextResponse {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const origin = url.origin;
+  const origin = publicOrigin(req);
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
 

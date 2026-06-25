@@ -7,13 +7,13 @@
  */
 
 import { NextResponse } from 'next/server';
-import { googleConfigured, googleAuthUrl, randomState } from '@/lib/auth/google';
+import { googleConfigured, googleAuthUrl, randomState, publicOrigin } from '@/lib/auth/google';
 
 const STATE_COOKIE = 'g_oauth_state';
 
 export function GET(req: Request) {
   const url = new URL(req.url);
-  const origin = url.origin;
+  const origin = publicOrigin(req);
   const next = url.searchParams.get('next') || '/today';
 
   if (!googleConfigured()) {
