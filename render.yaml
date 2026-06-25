@@ -1,28 +1,35 @@
-# Render Blueprint — ABM Engine
-# Deploy: push this repo to GitHub → Render → New → Blueprint → pick this repo.
-# Render reads this file and provisions everything below in one shot.
+# Render Blueprint — ABM Engine (FREE tier)
+# Deploy: GitHub repo → Render → New → Blueprint → pick this repo → set branch
+#         to feature/icp-engine-mode-a → Apply. No card required on free plans.
 #
-# What it creates:
-#   - abm-web      : the Next.js app (public URL)
-#   - abm-worker   : the BullMQ workers (all 11 engines, one process — ADR-012)
-#   - abm-postgres : managed PostgreSQL 16
-#   - abm-redis    : managed Key-Value (Redis) for the event bus
+# What it creates (all free):
+#   - abm-web      : the Next.js app (public URL; spins down after ~15m idle)
+#   - abm-postgres : free PostgreSQL (NOTE: free DBs expire after ~30 days)
+#   - abm-redis    : free Key-Value (Redis) for the event bus (25MB)
 #
-# After first deploy, set the SECRET env vars (marked sync:false) in the Render
-# dashboard — they are never committed. See docs/project/deploy-render.md.
+# NOT included on free tier: the BullMQ worker (Render has no free worker plan,
+# ~$7/mo minimum). Without it, event-driven automation does not run in the cloud
+# — run `npm run worker` locally against the Render DB/Redis when you need the
+# pipeline to process, or add the worker service back when you move to a paid plan.
+#
+# Migrations run inside buildCommand because free plans don't support
+# preDeployCommand.
+#
+# After first deploy, set the SECRET env vars (sync:false) in the dashboard.
+# See docs/project/deploy-render.md.
 
 databases:
   - name: abm-postgres
     databaseName: abm
     user: abm
-    plan: basic-256mb       # bump to standard for real load
+    plan: free
     postgresMajorVersion: "16"
 
 services:
   # ── Redis (event bus) ──────────────────────────────────────────────────────
   - type: keyvalue
     name: abm-redis
-    plan: free               # 25MB; enough for MVP queues. Bump for volume.
+    plan: free               # 25MB
     maxmemoryPolicy: noeviction   # BullMQ must NOT evict jobs
     ipAllowList: []          # only reachable from inside the Render network
 
@@ -30,9 +37,8 @@ services:
   - type: web
     name: abm-web
     runtime: node
-    plan: starter
-    buildCommand: npm ci && npm run build
-    preDeployCommand: npx prisma migrate deploy   # runs once per deploy, before traffic shifts
+    plan: free
+    buildCommand: npm ci && npx prisma migrate deploy && npm run build
     startCommand: npm run start
     healthCheckPath: /api/v1/icp-engine/health
     autoDeploy: true
@@ -64,32 +70,3 @@ services:
       - { key: GOOGLE_CLIENT_SECRET,  sync: false }
       - { key: NEXT_PUBLIC_POSTHOG_KEY,  sync: false }
       - { key: NEXT_PUBLIC_POSTHOG_HOST, sync: false }
-
-  # ── Worker (event bus consumers) ───────────────────────────────────────────
-  - type: worker
-    name: abm-worker
-    runtime: node
-    plan: starter
-    buildCommand: npm ci && npx prisma generate
-    startCommand: npm run worker
-    autoDeploy: true
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase: { name: abm-postgres, property: connectionString }
-      - key: DIRECT_URL
-        fromDatabase: { name: abm-postgres, property: connectionString }
-      - key: REDIS_URL
-        fromService: { type: keyvalue, name: abm-redis, property: connectionString }
-      - { key: ENCRYPTION_KEY,        sync: false }
-      - { key: ICP_LLM,               sync: false }
-      - { key: ANTHROPIC_API_KEY,     sync: false }
-      - { key: OLLAMA_URL,            sync: false }
-      - { key: OLLAMA_MODEL,          sync: false }
-      - { key: APOLLO_API_KEY,        sync: false }
-      - { key: FIRECRAWL_API_KEY,     sync: false }
-      - { key: THEIRSTACK_API_KEY,    sync: false }
-      - { key: HUBSPOT_SERVICE_KEY,   sync: false }
-      - { key: TELEGRAM_BOT_TOKEN,    sync: false }
-      - { key: TELEGRAM_CHAT_ID,      sync: false }

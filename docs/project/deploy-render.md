@@ -1,7 +1,18 @@
 # Deploying to Render
 
-The repo ships a `render.yaml` Blueprint that provisions everything: the Next.js
-web app, the BullMQ worker, managed Postgres, and managed Redis (Key-Value).
+The repo ships a `render.yaml` Blueprint on Render's **free tier**: the Next.js
+web app, managed Postgres, and managed Redis (Key-Value).
+
+> **Worker note:** Render has no free background-worker plan (~$7/mo minimum),
+> so the BullMQ worker is **not** in the free Blueprint. The app runs and is
+> browsable, but event-driven automation (the engine pipeline) won't process in
+> the cloud. To run it: `npm run worker` locally pointed at the Render DB/Redis,
+> or add a `type: worker` service back to `render.yaml` once on a paid plan.
+>
+> Free-tier caveats: the web service spins down after ~15 min idle (first
+> request after is slow), and free Postgres expires after ~30 days.
+> Migrations run inside `buildCommand` (free plans don't support
+> `preDeployCommand`).
 
 ## One-time setup
 
