@@ -38,7 +38,9 @@ services:
     name: abm-web
     runtime: node
     plan: free
-    buildCommand: npm ci && npx prisma migrate deploy && npm run build
+    # --include=dev forces devDependencies (tailwindcss, postcss, typescript…)
+    # which Next needs at BUILD time; NODE_ENV=production would otherwise skip them.
+    buildCommand: npm ci --include=dev && npx prisma migrate deploy && npm run build
     startCommand: npm run start
     healthCheckPath: /api/v1/icp-engine/health
     autoDeploy: true
