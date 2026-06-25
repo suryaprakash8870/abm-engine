@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Card, Pill, Banner, LinkButton, WhatsNext } from '@/app/icp/ui';
 import { usePagination, Pagination } from '@/lib/web/pagination';
 import { getTal, finalizeTal, suppressAccount, type CurrentTal } from '@/lib/web/tal-api';
+import { syncToCrm } from '@/lib/web/crm-api';
 
 export default function TalPage() {
   const [tal, setTal] = useState<CurrentTal | null>(null);
@@ -13,6 +14,19 @@ export default function TalPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tierFilter, setTierFilter] = useState<0 | 1 | 2 | 3>(0);
+  const [syncing, setSyncing] = useState(false);
+
+  const handlePushToCrm = async () => {
+    setSyncing(true);
+    setError(null);
+    setNotice(null);
+    const res = await syncToCrm();
+    if (res.ok && res.data) {
+      const s = res.data;
+      setNotice(`Pushed to HubSpot (${s.mode}) · ${s.accounts} accounts · ${s.contacts} contacts · ${s.synced} synced${s.errors ? ` · ${s.errors} errors` : ''}.`);
+    } else setError(res.error?.message ?? 'Push to HubSpot failed.');
+    setSyncing(false);
+  };
 
   // Suppression modal
   const [suppressTarget, setSuppressTarget] = useState<{ id: string; name: string | null; domain: string | null } | null>(null);
@@ -73,6 +87,13 @@ export default function TalPage() {
         </div>
         <div className="flex items-center gap-3">
           <a href="/api/v1/tal/export" className="text-sm text-white/55 hover:text-white transition">Export CSV ↓</a>
+          <button
+            onClick={handlePushToCrm}
+            disabled={syncing || !tal}
+            className="rounded-xl border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent/20 disabled:opacity-40"
+          >
+            {syncing ? 'Pushing…' : 'Push to HubSpot'}
+          </button>
           <button
             onClick={handleFinalize}
             disabled={busy}

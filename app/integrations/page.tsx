@@ -5,8 +5,8 @@ import { Card, Pill, Banner, WhatsNext } from '@/app/icp/ui';
 import { usePagination, Pagination } from '@/lib/web/pagination';
 import {
   getCrmConnections, connectHubspot, disconnectHubspot, getSyncLog,
-  getIntegrationKeys, saveIntegrationKey, removeIntegrationKey, sendTelegramTest, importFromCrm, syncToCrm,
-  type CrmConnection, type SyncLogRow, type CrmImportSummary, type CrmSyncSummary,
+  getIntegrationKeys, saveIntegrationKey, removeIntegrationKey, sendTelegramTest, importFromCrm,
+  type CrmConnection, type SyncLogRow, type CrmImportSummary,
 } from '@/lib/web/crm-api';
 
 const OUTCOME_TONE: Record<string, 'green' | 'red' | 'amber'> = {
@@ -49,8 +49,6 @@ export default function IntegrationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importSummary, setImportSummary] = useState<CrmImportSummary | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncSummary, setSyncSummary] = useState<CrmSyncSummary | null>(null);
 
   const runImport = async () => {
     setImporting(true); setError(null); setImportSummary(null);
@@ -58,14 +56,6 @@ export default function IntegrationsPage() {
     if (r.ok && r.data) setImportSummary(r.data);
     else setError(r.error?.message ?? 'Import failed.');
     setImporting(false);
-  };
-
-  const runSync = async () => {
-    setSyncing(true); setError(null); setSyncSummary(null);
-    const r = await syncToCrm();
-    if (r.ok && r.data) { setSyncSummary(r.data); void load(); }
-    else setError(r.error?.message ?? 'Sync failed.');
-    setSyncing(false);
   };
 
   const load = async () => {
@@ -182,28 +172,6 @@ export default function IntegrationsPage() {
                   <span className="text-emerald-300/80">Won {importSummary.closed_won}</span>
                   <span className="text-red-300/80">Lost {importSummary.closed_lost}</span>
                   <span className="text-accent">→ {importSummary.events_emitted} fed to ICP</span>
-                </div>
-              )}
-            </Card>
-
-            {/* Push (HubSpot as OUTPUT) */}
-            <Card className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-white/90">Push to HubSpot</p>
-                  <p className="text-xs text-white/45">Write your TAL accounts (+ tiers) and mapped contacts back to the CRM.</p>
-                </div>
-                <button onClick={runSync} disabled={syncing} className="shrink-0 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent/20 disabled:opacity-40">
-                  {syncing ? 'Pushing…' : 'Push now'}
-                </button>
-              </div>
-              {syncSummary && (
-                <div className="flex flex-wrap gap-x-5 gap-y-1.5 border-t border-white/[0.06] pt-3 text-[12.5px]">
-                  <span className="text-white/45">Target <span className="text-white/75">{syncSummary.mode}</span></span>
-                  <span className="text-white/45">Accounts <span className="text-white/80">{syncSummary.accounts}</span></span>
-                  <span className="text-white/45">Contacts <span className="text-white/80">{syncSummary.contacts}</span></span>
-                  <span className="text-emerald-300/80">Synced {syncSummary.synced}</span>
-                  {syncSummary.errors > 0 && <span className="text-red-300/80">Errors {syncSummary.errors}</span>}
                 </div>
               )}
             </Card>
