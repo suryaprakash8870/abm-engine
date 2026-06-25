@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { Card, Pill, Banner, LinkButton } from '@/app/icp/ui';
+import { usePagination, Pagination } from '@/lib/web/pagination';
 import { overrideTier } from '@/lib/web/scoring-api';
 
 interface ScoredRow {
@@ -54,6 +56,8 @@ export default function ScoredAccountsPage() {
     : tier === 3 ? <Pill tone="gray">Tier 3</Pill>
     : <Pill tone="gray">Untiered</Pill>;
 
+  const pg = usePagination(accounts, 25);
+
   if (loading) return <p className="text-sm text-white/40">Loading scored accounts…</p>;
 
   return (
@@ -77,7 +81,7 @@ export default function ScoredAccountsPage() {
               <button
                 key={t}
                 onClick={() => setOverrideTierVal(t)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${overrideTierVal === t ? 'bg-blue-500 text-white' : 'border border-white/15 bg-white/5 text-white/60 hover:bg-white/10'}`}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${overrideTierVal === t ? 'bg-accent text-accent-foreground' : 'border border-white/15 bg-white/5 text-white/60 hover:bg-white/10'}`}
               >
                 Tier {t}
               </button>
@@ -91,7 +95,7 @@ export default function ScoredAccountsPage() {
             className="w-full rounded-xl border border-white/15 bg-white/[0.06] px-3.5 py-2.5 text-sm text-white placeholder-white/30 outline-none focus:border-white/30"
           />
           <div className="flex gap-3">
-            <button onClick={handleOverride} disabled={overriding || !overrideReason.trim()} className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-400 disabled:bg-white/10 disabled:text-white/30 transition">
+            <button onClick={handleOverride} disabled={overriding || !overrideReason.trim()} className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent-hover disabled:bg-white/10 disabled:text-white/30 transition">
               {overriding ? 'Saving…' : 'Apply override'}
             </button>
             <button onClick={() => setOverrideTarget(null)} className="text-sm text-white/40 hover:text-white transition">Cancel</button>
@@ -114,7 +118,7 @@ export default function ScoredAccountsPage() {
               </tr>
             </thead>
             <tbody>
-              {accounts.map((a) => (
+              {pg.pageItems.map((a) => (
                 <tr key={a.id} className="border-b border-white/10 last:border-0 hover:bg-white/5">
                   <td className="px-4 py-2.5">
                     <p className="font-medium text-white/85">{a.name ?? '—'}</p>
@@ -157,8 +161,27 @@ export default function ScoredAccountsPage() {
               ))}
             </tbody>
           </table>
+          <Pagination {...pg} unit="accounts" />
         </Card>
       )}
+
+      {/* Forward nav — every page in the pipeline gets a "Next" so users can
+          walk the engines without consulting the header. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-6">
+        <LinkButton href={`/scoring/${icpId}`}>← Back to Formula</LinkButton>
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-white/35">Next: Target Account List (Engine 05)</span>
+          <Link
+            href="/tal"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-[0_8px_24px_-12px_rgba(197,251,80,0.55)] transition hover:bg-accent-hover"
+          >
+            Open TAL
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

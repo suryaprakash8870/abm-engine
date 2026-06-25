@@ -30,6 +30,28 @@ export async function signupUser(email: string, password: string, fullName?: str
   return { userId: user.id, workspaceId: workspace.id, email: normEmail };
 }
 
+/**
+ * Find-or-create a user from a verified OAuth identity (e.g. Google). No password
+ * is set. If the email already exists (password or prior OAuth), we log them in —
+ * the verified email is the link key. New users get a workspace + owner membership.
+ */
+export async function findOrCreateOAuthUser(email: string, fullName?: string): Promise<Session> {
+  const normEmail = email.trim().toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email: normEmail } });
+  if (existing) {
+    const member = await prisma.workspaceMember.findFirst({ where: { userId: existing.id }, orderBy: { createdAt: 'asc' } });
+    if (!member) throw new AuthError('No workspace is associated with this account.');
+    return { userId: existing.id, workspaceId: member.workspaceId, email: normEmail };
+  }
+  const { user, workspace } = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({ data: { email: normEmail, fullName: fullName ?? null, passwordHash: null } });
+    const workspace = await tx.workspace.create({ data: { name: fullName ? `${fullName}'s workspace` : `${normEmail}'s workspace` } });
+    await tx.workspaceMember.create({ data: { workspaceId: workspace.id, userId: user.id, role: 'owner' } });
+    return { user, workspace };
+  });
+  return { userId: user.id, workspaceId: workspace.id, email: normEmail };
+}
+
 export async function loginUser(email: string, password: string): Promise<Session> {
   const normEmail = email.trim().toLowerCase();
   const user = await prisma.user.findUnique({ where: { email: normEmail } });

@@ -16,7 +16,7 @@
 
 import { prisma } from '../../db/client';
 import { Prisma } from '@prisma/client';
-import { anthropic, MODELS } from '../../clients/anthropic';
+import { llmProvider, llmStructured, activeModelLabel } from '../../clients/llm';
 import type {
   AccountStageChangedPayload, AccountHotPayload, PlayFiredPayload, PlayOutcomeRecordedPayload,
   Tier, AwarenessStage, Json,
@@ -232,22 +232,31 @@ export async function generateAiDraft(workspaceId: string, playId: string): Prom
 
   let draft: { subjectLines: string[]; body: string; modelUsed: string };
   try {
-    if (!process.env.ANTHROPIC_API_KEY) throw new Error('no key');
-    const msg = await anthropic().messages.create({
-      model: MODELS.reasoning,
-      max_tokens: 700,
-      messages: [{ role: 'user', content: `Write a concise B2B sales outreach email to ${company}. Their buying signal: ${play.playType} (${play.triggerType}). Return JSON: {"subject_lines":[3 strings],"body":"..."}. Keep body under 120 words, no fluff.` }],
+    // Provider-agnostic (Ollama default | Anthropic). Mock mode skips straight to
+    // the template fallback below.
+    if (llmProvider() === 'mock') throw new Error('llm mock mode');
+    const parsed = await llmStructured({
+      toolName: 'emit_email_draft',
+      schema: {
+        type: 'object',
+        required: ['subject_lines', 'body'],
+        properties: {
+          subject_lines: { type: 'array', items: { type: 'string' }, description: '3 subject lines' },
+          body: { type: 'string', description: 'email body, under 120 words' },
+        },
+      },
+      system: 'You are a B2B sales copywriter. Write concise, specific outreach with no fluff.',
+      user: `Write a concise B2B sales outreach email to ${company}. Their buying signal: ${play.playType} (${play.triggerType}). 3 subject lines and a body under 120 words.`,
+      model: 'reasoning',
+      maxTokens: 700,
+      temperature: 0.6,
     });
-    const text = msg.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
-    const start = text.indexOf('{'), end = text.lastIndexOf('}');
-    if (start < 0 || end < start) throw new Error('no JSON object in draft response');
-    const parsed = JSON.parse(text.slice(start, end + 1)) as { subject_lines: unknown; body: unknown };
     // Validate the SHAPE at runtime — a structurally-valid-but-wrong response must
     // fall through to the fallback, not corrupt the draft / crash the DB insert.
     if (!Array.isArray(parsed.subject_lines) || !parsed.subject_lines.every((s) => typeof s === 'string') || typeof parsed.body !== 'string') {
       throw new Error('malformed draft JSON shape');
     }
-    draft = { subjectLines: (parsed.subject_lines as string[]).slice(0, 3), body: parsed.body, modelUsed: MODELS.reasoning };
+    draft = { subjectLines: (parsed.subject_lines as string[]).slice(0, 3), body: parsed.body as string, modelUsed: activeModelLabel('reasoning') };
   } catch {
     // Fallback template draft (failure is non-fatal — surface the task without AI; doc).
     draft = {

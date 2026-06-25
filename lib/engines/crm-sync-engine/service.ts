@@ -20,6 +20,7 @@ import { getRedisConnection } from '../../clients/redis';
 import type { CrmType, Json } from '../../events';
 import { encryptToken, decryptToken } from './crypto';
 import { getCrmAdapter, type CrmAdapter, type CrmWrite } from './crm-adapter';
+import { publishCrmDealClosedWon, publishCrmDealClosedLost } from './publisher';
 
 export interface CrmWriteRecord { recordType: string; recordId: string; fields: Record<string, unknown> }
 
@@ -257,4 +258,65 @@ export async function getSyncLog(workspaceId: string, limit = 100) {
     id: r.id, record_type: r.recordType, record_id: r.recordId, operation: r.operation,
     outcome: r.outcome, synced_at: r.syncedAt.toISOString(), detail: (r.apiResponse ?? {}) as Json,
   }));
+}
+
+// ── Import: HubSpot as INPUT (ADR-015 #5) ────────────────────────────────────
+
+export interface CrmImportSummary {
+  mode: string;            // adapter kind (hubspot | hubspot_mock)
+  companies: number;
+  contacts: number;
+  deals: number;
+  closed_won: number;
+  closed_lost: number;
+  events_emitted: number;  // deal-closed events fed to ICP + Flywheel
+}
+
+function isWonStage(stage: string): boolean { return /closed.?won|\bwon\b/i.test(stage); }
+function isLostStage(stage: string): boolean { return /closed.?lost|\blost\b/i.test(stage); }
+
+/** HubSpot closedate is ISO or epoch-ms; normalise to ISO. */
+function toIso(v: string | null): string {
+  if (!v) return new Date().toISOString();
+  if (/^\d+$/.test(v)) return new Date(Number(v)).toISOString();
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
+/**
+ * Pull companies / contacts / deals from the CRM. Closed-won/lost deals are
+ * republished as `crm.deal_closed_won|lost` events — the critical feedback loop
+ * consumed by the ICP Engine (refresh) and GTM Flywheel (attribution).
+ */
+export async function importFromCrm(workspaceId: string, correlationId: string): Promise<CrmImportSummary> {
+  const accessToken = await resolveAccessToken(workspaceId, 'hubspot');
+  const adapter = getCrmAdapter(accessToken);
+
+  const [companies, contacts, deals] = await Promise.all([
+    adapter.listCompanies(), adapter.listContacts(), adapter.listDeals(),
+  ]);
+  const domainById = new Map(companies.map((c) => [c.id, c.domain]));
+
+  let won = 0, lost = 0, emitted = 0;
+  for (const d of deals) {
+    const stage = d.stage ?? '';
+    const isWon = isWonStage(stage);
+    const isLost = isLostStage(stage);
+    if (!isWon && !isLost) continue;
+
+    const domain = d.companyIds.map((id) => domainById.get(id)).find(Boolean) ?? '';
+    const accountId = domain ? await resolveAccountByDomain(workspaceId, domain) : null;
+    const base = {
+      deal_id: d.id, crm_type: 'hubspot' as CrmType, account_id: accountId,
+      domain: domain ?? '', amount: d.amount, stage, closed_at: toIso(d.closedAt), owner_id: null,
+    };
+    if (isWon) { won += 1; await publishCrmDealClosedWon(base, { workspaceId, correlationId }); emitted += 1; }
+    else { lost += 1; await publishCrmDealClosedLost({ ...base, lost_reason: null }, { workspaceId, correlationId }); emitted += 1; }
+  }
+
+  return {
+    mode: adapter.kind,
+    companies: companies.length, contacts: contacts.length, deals: deals.length,
+    closed_won: won, closed_lost: lost, events_emitted: emitted,
+  };
 }

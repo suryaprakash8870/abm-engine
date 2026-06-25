@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, Pill, Banner, LinkButton } from '@/app/icp/ui';
+import Link from 'next/link';
+import { Card, Pill, Banner, LinkButton, WhatsNext } from '@/app/icp/ui';
+import { usePagination, Pagination } from '@/lib/web/pagination';
 import { getTal, finalizeTal, suppressAccount, type CurrentTal } from '@/lib/web/tal-api';
 
 export default function TalPage() {
@@ -54,9 +56,11 @@ export default function TalPage() {
     : tier === 2 ? <Pill tone="amber">Tier 2</Pill>
     : <Pill tone="gray">Tier 3</Pill>;
 
-  if (loading) return <p className="text-sm text-white/40">Loading target account list…</p>;
-
+  // Filter + paginate (hooks must run before any early return).
   const accounts = (tal?.accounts ?? []).filter((a) => tierFilter === 0 || a.tier === tierFilter);
+  const pg = usePagination(accounts, 25);
+
+  if (loading) return <p className="text-sm text-white/40">Loading target account list…</p>;
 
   return (
     <div className="space-y-6">
@@ -72,7 +76,7 @@ export default function TalPage() {
           <button
             onClick={handleFinalize}
             disabled={busy}
-            className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-400 disabled:bg-white/10 disabled:text-white/30 transition"
+            className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-[0_8px_24px_-12px_rgba(197,251,80,0.55)] hover:bg-accent-hover disabled:bg-white/10 disabled:text-white/30 disabled:shadow-none transition"
           >
             {busy ? 'Working…' : tal ? 'Re-finalize' : 'Finalize TAL'}
           </button>
@@ -95,14 +99,14 @@ export default function TalPage() {
               <button
                 key={r}
                 onClick={() => setSuppressReason(r)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${suppressReason === r ? 'bg-blue-500 text-white' : 'border border-white/15 bg-white/5 text-white/60 hover:bg-white/10'}`}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${suppressReason === r ? 'bg-accent text-accent-foreground' : 'border border-white/15 bg-white/5 text-white/60 hover:bg-white/10'}`}
               >
                 {r.replace(/_/g, ' ')}
               </button>
             ))}
           </div>
           <div className="flex gap-3">
-            <button onClick={handleSuppress} disabled={busy} className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-400 disabled:bg-white/10 disabled:text-white/30 transition">
+            <button onClick={handleSuppress} disabled={busy} className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent-hover disabled:bg-white/10 disabled:text-white/30 transition">
               {busy ? 'Saving…' : 'Suppress'}
             </button>
             <button onClick={() => setSuppressTarget(null)} className="text-sm text-white/40 hover:text-white transition">Cancel</button>
@@ -138,7 +142,7 @@ export default function TalPage() {
                 </tr>
               </thead>
               <tbody>
-                {accounts.map((a) => (
+                {pg.pageItems.map((a) => (
                   <tr key={a.account_id} className="border-b border-white/10 last:border-0 hover:bg-white/5">
                     <td className="px-4 py-2.5 font-medium text-white/85">{a.name ?? '—'}</td>
                     <td className="px-4 py-2.5 text-white/60">{a.domain ?? '—'}</td>
@@ -156,14 +160,12 @@ export default function TalPage() {
                 ))}
               </tbody>
             </table>
+            <Pagination {...pg} unit="accounts" />
           </Card>
         </>
       )}
 
-      <div className="flex items-center justify-between border-t border-white/10 pt-6">
-        <LinkButton href="/icp">← Back to ICP</LinkButton>
-        <span className="text-sm text-white/35">Next: contacts (Engine 06)</span>
-      </div>
+      <WhatsNext auto="Accounts are scored and tiered automatically as data arrives. Tier 1 are your priority." cta={{ label: 'Map their Contacts', href: '/contacts' }} />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Banner, Card, ChipList, LinkButton, Pill, SectionTitle } from './ui';
+import { Banner, Card, ChipList, LinkButton, Pill, SectionTitle, WhatsNext } from './ui';
 import { getTemplates, listIcps, type IcpTemplate } from '@/lib/web/icp-api';
 
 export default function IcpLandingPage() {
@@ -104,6 +104,8 @@ export default function IcpLandingPage() {
           </div>
         )}
       </section>
+
+      <WhatsNext auto="Your ICP drives account sourcing and scoring automatically across the pipeline." cta={{ label: 'View Target Accounts', href: '/tal' }} />
     </div>
   );
 }

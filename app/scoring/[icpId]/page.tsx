@@ -209,7 +209,8 @@ function CriterionRow({
         step={1}
         value={pct}
         onChange={(e) => onWeightChange(Number(e.target.value) / 100)}
-        className="w-full accent-blue-500"
+        className="w-full"
+        style={{ accentColor: '#C5FB50' }}
       />
     </div>
   );

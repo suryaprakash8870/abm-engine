@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, Pill, Banner, LinkButton } from '@/app/icp/ui';
+import { Card, Pill, Banner, LinkButton, WhatsNext } from '@/app/icp/ui';
 import {
   getPipeline, getCorrelation, getFlywheelMetrics, getAttribution,
   type PipelineData, type CorrelationData, type MetricsData, type AttributionDeal,
@@ -52,7 +52,7 @@ export default function InsightsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <h1 className="font-display text-2xl font-medium text-white">Insights</h1>
+        <h1 className="font-display text-2xl font-medium text-white">Analytics</h1>
         {metrics && <Pill tone="green">{metrics.closed_won} won</Pill>}
         {metrics && metrics.closed_lost > 0 && <Pill tone="red">{metrics.closed_lost} lost</Pill>}
       </div>
@@ -109,10 +109,7 @@ export default function InsightsPage() {
         </Card>
       )}
 
-      <div className="flex items-center justify-between border-t border-white/10 pt-6">
-        <LinkButton href="/integrations">← Back to Integrations</LinkButton>
-        <span className="text-sm text-white/35">The loop: wins → icp.refresh_recommended → Engine 01</span>
-      </div>
+      <WhatsNext auto="Every win and loss here automatically sharpens your ICP — that's the GTM flywheel." cta={{ label: 'Refine your ICP', href: '/icp' }} />
     </div>
   );
 }

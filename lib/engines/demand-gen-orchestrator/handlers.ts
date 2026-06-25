@@ -13,6 +13,7 @@ import type { EventEnvelope } from '../../events';
 import { validateAccountStageChanged, validateAccountHot, completionCheck } from './validation';
 import { resolveTier, triggerFromStageChanged, triggerFromAccountHot, runOrchestration, type PlayTrigger } from './service';
 import { publishPlayFired } from './publisher';
+import { notifyPlayFired } from './notify';
 
 async function orchestrateAndPublish(workspaceId: string, correlationId: string, trigger: PlayTrigger): Promise<void> {
   const result = await runOrchestration(trigger);
@@ -29,6 +30,7 @@ async function orchestrateAndPublish(workspaceId: string, correlationId: string,
   if (!check.ok) throw new Error(`[demand-gen-orchestrator] completion check failed: ${check.failed.join('; ')}`);
 
   await publishPlayFired(result.payload, { workspaceId, correlationId });
+  await notifyPlayFired(workspaceId, result.payload); // post-commit, best-effort
 }
 
 /** Primary trigger: a stage boundary was crossed (from Awareness Engine 08). */

@@ -27,3 +27,14 @@ export const login = (email: string, password: string) =>
 export const logout = () => call<{ ok: boolean }>('/api/v1/auth/logout', { method: 'POST' });
 
 export const me = () => call<{ email: string; workspace_id: string }>('/api/v1/auth/me');
+
+export const getWorkspace = () => call<{ id: string; name: string }>('/api/v1/workspace');
+export const updateWorkspace = (name: string) =>
+  call<{ id: string; name: string }>('/api/v1/workspace', { method: 'PUT', body: JSON.stringify({ name }) });
+
+export interface LlmConfig { url: string; model: string; source: 'db' | 'env' | 'default'; has_auth: boolean }
+export const getLlmConfig = () => call<LlmConfig>('/api/v1/settings/llm');
+export const updateLlmConfig = (patch: { url?: string; model?: string; auth?: string }) =>
+  call<LlmConfig>('/api/v1/settings/llm', { method: 'PUT', body: JSON.stringify(patch) });
+export const testLlmConfig = (probe?: { url?: string; auth?: string }) =>
+  call<{ reachable: boolean; url: string; models: string[] }>('/api/v1/settings/llm/test', { method: 'POST', body: JSON.stringify(probe ?? {}) });

@@ -5,6 +5,42 @@
 
 ---
 
+## ADR-015 — Product direction: business-workflow UX + human-in-the-loop automation
+
+**Status:** Accepted (2026-06-25) — captures a design session (see `reference/chatgpt-notes-2.md`). Implementation phased, not yet built.
+
+**Context:** A product-design discussion clarified how the platform should *behave*, not just what it does. Key shifts from the as-built MVP.
+
+**Decisions:**
+1. **Business-workflow UX, engines hidden.** The 11 engines are internal architecture. Users navigate by business function (Dashboard · Data Sources · ICP · Target Accounts · Contacts · Signals · Campaigns · Analytics · Settings), NOT engine pages with engine-to-engine "Next" buttons. (Supersedes the earlier per-engine "Next" stepper, which stays only for the guided demo/setup tour.)
+2. **Setup-once / review-daily.** A one-time ~30–60 min setup (connect HubSpot → CSV → ICP → scoring → Telegram → start). Daily use is reviewing a results dashboard (`/today`), not re-running engines.
+3. **Two engine classes.** *Setup engines* (CRM Import, ICP Builder, TAM) run on setup / manual / scheduled refresh. *Background engines* (Research, Signals, Scoring, Awareness, Contacts, CRM Sync, Notifications, Analytics) run continuously.
+4. **Human-in-the-loop.** Each engine supports **Manual / Semi-Automatic / Fully-Automatic**. High-risk actions (send outreach email, CRM sync, campaign launch) default to requiring approval; low-risk run automatically.
+5. **HubSpot is INPUT and OUTPUT.** Import companies/contacts/deals/closed-won/closed-lost (input) in addition to the existing write-back (output). The import is what feeds the win/loss→ICP refresh.
+6. **CSV contact import for MVP**, replacing Apollo as the default contact source (Apollo stays optional/BYO).
+
+**Why:** Reframes the product as an "intelligent GTM employee" — works in the background, surfaces results, asks approval for risky actions — rather than a manual 11-step tool.
+
+**Consequences:** Phased work. Nav refactor (rename Plays→Campaigns, Integrations→Data Sources; demote the Next stepper). New per-engine automation-mode + approval model. New HubSpot import path + scheduler for setup engines. CSV contact import. None built yet; tracked as the next roadmap.
+
+---
+
+## ADR-014 — MVP tool picks: adopt Hunter.io / Firecrawl / Telegram as connectors; decline n8n + Metabase
+
+**Status:** Accepted (2026-06-24)
+
+**Context:** A product-design brainstorm (captured in `reference/chatgpt-notes.md`) proposed an MVP tool stack: Qwen local, HubSpot, Firecrawl, PostHog, Supabase, n8n, Hunter.io, Telegram, Metabase. Most validated our existing architecture; a few were genuinely new.
+
+**Decision:** Adopt **Firecrawl** (site/news crawl for 3rd-party signals → Engines 03·07) and **Telegram** (bot alerts → Engine 09) as BYO-key connectors in the Integrations hub (allowlist in `app/api/v1/integrations/keys/route.ts`, cards in `app/integrations/page.tsx`). **Decline n8n** (duplicates our Orchestrator/BullMQ) and **Metabase** (covered by GTM Flywheel + Today dashboard). Confirm — no change — PostHog, Qwen/Ollama, HubSpot upsert-dedupe, and the Account-Score-vs-Awareness-Score split.
+
+**Update (2026-06-24):** **Hunter.io dropped.** Hunter blocks free-email (Gmail) signup, which is a barrier for the MVP. Apollo — already a connected BYO-key provider and Gmail-friendly — covers contact + email discovery for Engine 06, so a dedicated email-finder is redundant. Alternatives considered if a standalone finder is ever needed: Snov.io / Tomba.io (both free-email-friendly).
+
+**Why:** The three adopted tools fill real gaps (contact discovery, web research, a free alert channel) and fit the existing connector pattern without new engines. The declined two would duplicate capabilities we already own.
+
+**Consequences:** Keys are AES-256-GCM encrypted like other BYO keys. The connectors are surfaced in the UI but their engine-side integrations (actual Firecrawl crawl, Hunter lookup, Telegram send) are follow-up work, not yet wired into the engines.
+
+---
+
 ## ADR-013 — TAL Manager delegates CRM writes via the event, not synchronously
 
 **Status:** Accepted

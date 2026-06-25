@@ -42,3 +42,6 @@ prisma/*.db
 
 # legacy (v0 prototype) drizzle generated
 packages/db/drizzle/meta
+
+# competitor reference screenshots — local only, not committed
+reference/

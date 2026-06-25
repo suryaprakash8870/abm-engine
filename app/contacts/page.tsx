@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Card, Pill, Banner, LinkButton } from '@/app/icp/ui';
+import { Card, Pill, Banner, LinkButton, WhatsNext } from '@/app/icp/ui';
+import { usePagination, Pagination } from '@/lib/web/pagination';
 import { listContacts, sourceContacts, sourceBatch, type AccountWithContacts } from '@/lib/web/contacts-api';
 
 export default function ContactsPage() {
@@ -51,6 +52,8 @@ export default function ContactsPage() {
     setBusy(false);
   };
 
+  const pg = usePagination(accounts, 25);
+
   if (loading) return <p className="text-sm text-white/40">Loading accounts…</p>;
 
   const tier1 = accounts.filter((a) => a.tier === 1);
@@ -65,7 +68,7 @@ export default function ContactsPage() {
         <button
           onClick={handleSourceBatch}
           disabled={busy || tier1.length === 0}
-          className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-400 disabled:bg-white/10 disabled:text-white/30 transition"
+          className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-[0_8px_24px_-12px_rgba(197,251,80,0.55)] hover:bg-accent-hover disabled:bg-white/10 disabled:text-white/30 disabled:shadow-none transition"
         >
           {busy ? 'Working…' : `Source all Tier 1 (${tier1.length})`}
         </button>
@@ -90,7 +93,7 @@ export default function ContactsPage() {
               </tr>
             </thead>
             <tbody>
-              {accounts.map((a) => (
+              {pg.pageItems.map((a) => (
                 <tr key={a.account_id} className="border-b border-white/10 last:border-0 hover:bg-white/5">
                   <td className="px-4 py-2.5">
                     <p className="font-medium text-white/85">{a.name ?? '—'}</p>
@@ -114,13 +117,11 @@ export default function ContactsPage() {
               ))}
             </tbody>
           </table>
+          <Pagination {...pg} unit="accounts" />
         </Card>
       )}
 
-      <div className="flex items-center justify-between border-t border-white/10 pt-6">
-        <LinkButton href="/tal">← Back to TAL</LinkButton>
-        <span className="text-sm text-white/35">Next: signals (Engine 07)</span>
-      </div>
+      <WhatsNext auto="These accounts are now tracked for buying signals automatically — no action needed." cta={{ label: 'View Signals', href: '/signals' }} />
     </div>
   );
 }

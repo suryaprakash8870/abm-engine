@@ -95,7 +95,7 @@ export default function CsvUploadPage() {
             type="file"
             accept=".csv,text/csv"
             onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
-            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-md file:border-0 file:bg-blue-500 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-blue-400"
+            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-md file:border-0 file:bg-accent file:px-3 file:py-2 file:text-sm file:font-semibold file:text-accent-foreground hover:file:bg-accent-hover"
           />
         </div>
 

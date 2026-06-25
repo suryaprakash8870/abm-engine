@@ -366,6 +366,71 @@ export async function buildWebhookSignal(workspaceId: string, source: string, ev
   return ingestNormalised(workspaceId, n);
 }
 
+// ── Third-party research signals (Firecrawl + LLM, Engine 03/07) ─────────────
+
+/**
+ * 3rd-party signal kinds extracted from web research. Weighted LOWER than
+ * 1st-party behaviour (a funding round is interesting; a pricing-page visit is
+ * stronger intent) and decayed slowly — these reflect company state, not a live
+ * session. The points below are the *max*; the actual award is scaled by the
+ * LLM's confidence in buildResearchSignal().
+ */
+export const THIRD_PARTY_SIGNALS: Record<string, { type: string; points: number; decay: number }> = {
+  funding_round:     { type: 'funding_round',     points: 22, decay: 0.12 },
+  hiring_surge:      { type: 'hiring_surge',      points: 16, decay: 0.18 },
+  product_launch:    { type: 'product_launch',    points: 14, decay: 0.18 },
+  tech_stack_change: { type: 'tech_stack_change', points: 12, decay: 0.2 },
+  expansion:         { type: 'expansion',         points: 10, decay: 0.2 },
+};
+
+export interface ResearchFinding {
+  /** One of THIRD_PARTY_SIGNALS keys. */
+  kind: string;
+  /** 0–1 — how confident the extractor is this signal is real and recent. */
+  confidence: number;
+  /** Short supporting quote/summary from the source (stored for audit). */
+  evidence: string;
+}
+
+/**
+ * Normalise + ingest one extracted research finding for an account. Points scale
+ * by confidence; low-confidence findings are discarded. Dedup is per (account,
+ * kind, day) so re-running research the same day won't pile up duplicates.
+ */
+export async function buildResearchSignal(
+  workspaceId: string,
+  account: { accountId: string; domain: string | null },
+  finding: ResearchFinding,
+  sourceUrl: string,
+  provider = 'firecrawl',
+): Promise<IngestResult> {
+  const spec = THIRD_PARTY_SIGNALS[finding.kind];
+  if (!spec) return { status: 'discarded', reason: `unknown finding ${finding.kind}` };
+
+  const confidence = Math.max(0, Math.min(1, finding.confidence));
+  const points = Math.round(spec.points * confidence);
+  if (points <= 0 || confidence < 0.4) return { status: 'discarded', reason: 'low confidence' };
+
+  const occurredAt = new Date().toISOString();
+  const occurredMs = new Date(occurredAt).getTime();
+  const contactId = await getAttributedContact(workspaceId, account.accountId);
+  // Day-bucketed dedup key (not the 5-min one) — research signals are per-day, not per-session.
+  const dayBucket = Math.floor(occurredMs / 86_400_000);
+  const n: NormalisedSignal = {
+    accountId: account.accountId,
+    contactId,
+    signalType: spec.type,
+    signalSource: 'research',
+    pointsAwarded: points,
+    decayRatePerWeek: spec.decay,
+    pageUrl: sourceUrl,
+    metadata: { evidence: finding.evidence.slice(0, 500), confidence, provider },
+    dedupKey: `${account.accountId}:${spec.type}:d${dayBucket}`,
+    occurredAt,
+  };
+  return ingestNormalised(workspaceId, n);
+}
+
 export async function logWebhook(workspaceId: string | null, source: string, payload: unknown, signatureValid: boolean): Promise<void> {
   await prisma.webhookLog.create({ data: { workspaceId, source, payload: payload as Prisma.InputJsonValue, signatureValid } });
 }

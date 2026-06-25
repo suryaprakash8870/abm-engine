@@ -1,10 +1,7 @@
-import { GlowBackground } from '@/lib/web/shell';
-
+/**
+ * Auth layout — pass-through wrapper. Login and signup each own their own
+ * full-viewport split layout (marketing on the left, form on the right).
+ */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="relative flex min-h-screen items-center justify-center p-6 text-white">
-      <GlowBackground />
-      <div className="w-full max-w-sm">{children}</div>
-    </div>
-  );
+  return <div className="min-h-screen text-white">{children}</div>;
 }

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, Pill, Banner, LinkButton } from '@/app/icp/ui';
+import { Card, Pill, Banner, WhatsNext } from '@/app/icp/ui';
+import { usePagination, Pagination } from '@/lib/web/pagination';
 import { getPlayFeed, recordPlayOutcome, snoozePlay, generateDraft, type Play } from '@/lib/web/plays-api';
 
 const STATUS_TONE: Record<string, 'gray' | 'blue' | 'amber' | 'green' | 'red'> = {
@@ -40,12 +41,14 @@ export default function PlaysPage() {
     setBusy(false);
   };
 
+  const pg = usePagination(plays, 25);
+
   if (loading) return <p className="text-sm text-white/40">Loading play queue…</p>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <h1 className="font-display text-2xl font-medium text-white">Play Queue</h1>
+        <h1 className="font-display text-2xl font-medium text-white">Campaigns</h1>
         <Pill tone="green">{plays.length} plays</Pill>
       </div>
 
@@ -67,7 +70,7 @@ export default function PlaysPage() {
                 </tr>
               </thead>
               <tbody>
-                {plays.map((p) => (
+                {pg.pageItems.map((p) => (
                   <tr key={p.id} className="border-b border-white/10 last:border-0 hover:bg-white/5 align-top">
                     <td className="px-4 py-2.5">
                       <p className="font-medium text-white/85">{p.play_type.replace(/_/g, ' ')}</p>
@@ -83,7 +86,7 @@ export default function PlaysPage() {
                     <td className="px-4 py-2.5">
                       <div className="flex flex-wrap justify-end gap-2 text-xs">
                         {p.execution_method === 'crm_task_slack' && (
-                          <button onClick={() => openDraft(p.id)} className="rounded-md border border-blue-400/30 px-2 py-0.5 text-blue-200 hover:bg-blue-500/10 transition">Draft</button>
+                          <button onClick={() => openDraft(p.id)} className="rounded-md border border-accent/40 px-2 py-0.5 text-accent hover:bg-accent-soft transition">Draft</button>
                         )}
                         <button onClick={() => outcome(p.id, 'contacted')} className="rounded-md border border-white/10 px-2 py-0.5 text-white/50 hover:bg-white/10 transition">Contacted</button>
                         <button onClick={() => outcome(p.id, 'not_interested')} className="rounded-md border border-white/10 px-2 py-0.5 text-white/50 hover:bg-white/10 transition">Not interested</button>
@@ -95,6 +98,7 @@ export default function PlaysPage() {
               </tbody>
             </table>
           )}
+          <Pagination {...pg} unit="plays" />
         </Card>
 
         {/* Draft panel */}
@@ -110,7 +114,7 @@ export default function PlaysPage() {
               <>
                 <div className="flex gap-1">
                   {draft.subject_lines.map((s, i) => (
-                    <button key={i} onClick={() => setDraftSubject(i)} className={`flex-1 truncate rounded-md px-2 py-1 text-[11px] transition ${draftSubject === i ? 'bg-blue-500/20 text-blue-100' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}>{i + 1}</button>
+                    <button key={i} onClick={() => setDraftSubject(i)} className={`flex-1 truncate rounded-md px-2 py-1 text-[11px] transition ${draftSubject === i ? 'bg-accent-soft text-accent' : 'bg-white/5 text-white/50 hover:bg-white/10'}`}>{i + 1}</button>
                   ))}
                 </div>
                 <p className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-medium text-white/85">{draft.subject_lines[draftSubject]}</p>
@@ -122,10 +126,7 @@ export default function PlaysPage() {
         )}
       </div>
 
-      <div className="flex items-center justify-between border-t border-white/10 pt-6">
-        <LinkButton href="/awareness">← Back to Awareness</LinkButton>
-        <span className="text-sm text-white/35">Next: CRM sync (Engine 10)</span>
-      </div>
+      <WhatsNext auto="Fired campaigns sync to your CRM and ping you on Telegram. Results roll up in Analytics." cta={{ label: 'See Analytics', href: '/insights' }} />
     </div>
   );
 }

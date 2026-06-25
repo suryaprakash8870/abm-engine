@@ -1,0 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrations — BYO API keys for data / delivery providers (Apollo, Clearbit,
+// Clay, Slack, Resend, ...). Lets a workspace plug in its own provider keys via
+// the Connectors hub. Keys are AES-256-GCM encrypted at rest (same crypto as the
+// CRM OAuth tokens) — never stored or returned in plaintext.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model IntegrationKey {
+  id          String   @id @default(cuid())
+  workspaceId String   @map("workspace_id")
+  provider    String // apollo | clearbit | clay | slack | resend | ...
+  keyEnc      String   @map("key_enc")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([workspaceId, provider]) // one key per provider per workspace
+  @@index([workspaceId])
+  @@map("integration_keys")
+}

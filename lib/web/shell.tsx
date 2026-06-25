@@ -1,56 +1,73 @@
 /**
- * Shared app chrome for the dark "Gemini" theme. Used by every section layout
- * so the whole app shares one canvas, one glow, and one header.
+ * Shared app chrome (dark canvas + lime accent). Used by every section layout
+ * so the whole app shares one canvas, one glow, and one navigation shell.
  *
- * - GlowBackground: fixed, behind everything — a breathing blue radial glow on a
- *   near-black canvas. Pure markup (no hooks) so it's safe in server components.
- * - AppHeader: sticky glass header with the brand crumb + UserMenu.
- * - AppShell: GlowBackground + AppHeader + a centered <main>.
+ * - GlowBackground: fixed, behind everything — corner glows on a near-black
+ *   canvas. Pure markup (no hooks) so it's safe in server components.
+ * - AppShell: GlowBackground + left Sidebar + a centered <main> + tour overlay.
  */
 
-import Link from 'next/link';
-import { UserMenu } from './user-menu';
+import { Sidebar } from './sidebar';
+import { TourBanner } from '../tour/TourBanner';
 
-/** Fixed, full-viewport dark canvas with a top-anchored breathing blue glow. */
+/**
+ * Fixed, full-viewport dark canvas with multiple breathing lime glows + grain.
+ * The orbs are spread across the viewport so the canvas feels alive at every
+ * scroll position, not just near the top of the page.
+ */
 export function GlowBackground() {
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[#0b0d14]">
-      {/* Wrapper centers the blob; the inner div animates scale/opacity only. */}
-      <div className="absolute left-1/2 top-[-200px] -translate-x-1/2">
+    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-canvas">
+      {/* Top-left lime halo — the brand glow. */}
+      <div className="absolute top-[-180px] left-[-140px]">
         <div
-          className="animate-breathe-soft h-[640px] w-[640px] rounded-full"
+          className="animate-breathe-soft h-[560px] w-[560px] rounded-full"
           style={{
             background:
-              'radial-gradient(circle, rgba(66,108,255,0.5), rgba(82,120,255,0.14) 42%, transparent 70%)',
-            filter: 'blur(60px)',
+              'radial-gradient(circle, rgba(197,251,80,0.60), rgba(133,221,53,0.14) 42%, transparent 70%)',
+            filter: 'blur(70px)',
           }}
         />
       </div>
+
+      {/* Bottom-right cool counter-glow — keeps the corner from going flat. */}
+      <div
+        className="absolute bottom-[-200px] right-[-160px]"
+        style={{ animation: 'breathe-soft 18s ease-in-out infinite 4s' }}
+      >
+        <div
+          className="h-[520px] w-[520px] rounded-full opacity-70"
+          style={{
+            background:
+              'radial-gradient(circle, rgba(56,189,248,0.22), transparent 65%)',
+            filter: 'blur(80px)',
+          }}
+        />
+      </div>
+
+      {/* Grain overlay for depth */}
+      <div className="bg-grain absolute inset-0 opacity-[0.18]" />
     </div>
   );
 }
 
-/** Sticky glass header. `crumb` renders after the brand as "ICP Engine / <crumb>". */
-export function AppHeader({ crumb }: { crumb?: string }) {
-  return (
-    <header className="sticky top-0 z-20 border-b border-white/10 bg-[#0b0d14]/70 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
-        <Link href="/icp" className="font-display text-base font-medium tracking-tight text-white">
-          ICP Engine{crumb ? <span className="text-white/35"> / {crumb}</span> : null}
-        </Link>
-        <UserMenu />
-      </div>
-    </header>
-  );
-}
-
-/** Full page shell: glow + header + centered main. */
+/**
+ * Full page shell: glow + left sidebar + centered main + tour overlay.
+ * `crumb` is accepted for back-compat (every section layout passes it) but is no
+ * longer rendered as a header — the sidebar's active state shows location now.
+ */
 export function AppShell({ crumb, children }: { crumb?: string; children: React.ReactNode }) {
+  void crumb;
   return (
     <div className="relative min-h-screen text-white">
       <GlowBackground />
-      <AppHeader crumb={crumb} />
-      <main className="mx-auto max-w-4xl px-6 py-10">{children}</main>
+      <div className="lg:flex">
+        <Sidebar />
+        <div className="min-w-0 flex-1">
+          <main className="mx-auto max-w-4xl px-6 py-8 lg:py-10">{children}</main>
+        </div>
+      </div>
+      <TourBanner />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, Pill, Banner, LinkButton } from '@/app/icp/ui';
+import { Card, Pill, Banner } from '@/app/icp/ui';
+import { usePagination, Pagination } from '@/lib/web/pagination';
 import {
   getAwarenessFeed, listRoutingRules, createRoutingRule, updateRoutingRule,
   type FeedAccount, type RoutingRule,
@@ -55,6 +56,8 @@ export default function AwarenessPage() {
     if (res.ok) await load();
   };
 
+  const pg = usePagination(feed, 25);
+
   if (loading) return <p className="text-sm text-white/40">Loading awareness…</p>;
 
   const hot = feed.filter((a) => a.score >= 60).length;
@@ -86,7 +89,7 @@ export default function AwarenessPage() {
               </tr>
             </thead>
             <tbody>
-              {feed.map((a) => (
+              {pg.pageItems.map((a) => (
                 <tr key={a.account_id} className="border-b border-white/10 last:border-0 hover:bg-white/5">
                   <td className="px-4 py-2.5">
                     <p className="font-medium text-white/85">{a.name ?? a.account_id.slice(0, 10)}</p>
@@ -107,6 +110,7 @@ export default function AwarenessPage() {
             </tbody>
           </table>
         )}
+        <Pagination {...pg} unit="accounts" />
       </Card>
 
       {/* Routing rules */}
@@ -119,7 +123,7 @@ export default function AwarenessPage() {
             <input type="number" value={minScore} onChange={(e) => setMinScore(Number(e.target.value))}
               className="w-16 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white/85" />
           </label>
-          <button onClick={addRule} disabled={busy || !newRule.trim()} className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-400 disabled:bg-white/10 disabled:text-white/30 transition">Add rule</button>
+          <button onClick={addRule} disabled={busy || !newRule.trim()} className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent-hover disabled:bg-white/10 disabled:text-white/30 transition">Add rule</button>
         </div>
         {rules.length === 0 ? (
           <p className="text-xs text-white/35">No routing rules yet. Add one to alert reps when accounts heat up.</p>
@@ -143,10 +147,6 @@ export default function AwarenessPage() {
         )}
       </Card>
 
-      <div className="flex items-center justify-between border-t border-white/10 pt-6">
-        <LinkButton href="/signals">← Back to Signals</LinkButton>
-        <span className="text-sm text-white/35">Next: orchestrator (Engine 09)</span>
-      </div>
     </div>
   );
 }

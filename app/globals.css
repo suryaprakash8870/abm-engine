@@ -2,17 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Dark Gemini theme — global base ───────────────────────────────────────── */
-html,
-body {
-  background-color: #0b0d14;
+/* ── OneGTMLab-inspired theme — dark canvas, lime accent ────────────────────── */
+/* html owns the base canvas color so the body stays transparent and the fixed
+   GlowBackground (-z-10) actually shows through. Setting `bg` on body paints
+   over the fixed orbs and kills the effect. */
+html {
+  background-color: #08090b;
 }
 body {
+  background-color: transparent;
   color: #fff;
   -webkit-font-smoothing: antialiased;
 }
 ::selection {
-  background: rgba(66, 108, 255, 0.35);
+  background: rgba(197, 251, 80, 0.32);
+  color: #0a0e07;
 }
 
 /* Dark, slim scrollbars to match the canvas. */
@@ -36,7 +40,7 @@ body {
   font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Slow, breathing radial glow behind a focused prompt (Gemini-style, centered). */
+/* Slow, breathing radial glow behind focal moments. */
 @keyframes breathe {
   0%,
   100% {
@@ -52,21 +56,20 @@ body {
   animation: breathe 7s ease-in-out infinite;
 }
 
-/* Softer breathing used for the app-wide background glow (no translate — the
-   wrapper handles positioning so this only scales + fades). */
+/* Softer breathing used for the app-wide background glow. */
 @keyframes breathe-soft {
   0%,
   100% {
-    opacity: 0.32;
+    opacity: 0.28;
     transform: scale(0.95);
   }
   50% {
-    opacity: 0.66;
+    opacity: 0.58;
     transform: scale(1.12);
   }
 }
 .animate-breathe-soft {
-  animation: breathe-soft 8s ease-in-out infinite;
+  animation: breathe-soft 9s ease-in-out infinite;
 }
 
 /* Gentle entrance for content. */
@@ -82,4 +85,46 @@ body {
 }
 .animate-rise {
   animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Subtle vertical pulse for the engine-list dots on the auth split screen. */
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+    box-shadow: 0 0 0 0 rgba(197, 251, 80, 0);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 14px 2px rgba(197, 251, 80, 0.55);
+  }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 3.6s ease-in-out infinite;
+}
+
+/* Slow ambient drift for the marketing-panel orbits. */
+@keyframes drift {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+.animate-drift {
+  animation: drift 60s linear infinite;
+}
+.animate-drift-rev {
+  animation: drift 90s linear infinite reverse;
+}
+
+
+/* Fine grain texture overlay — used sparingly on big surfaces for depth. */
+.bg-grain {
+  background-image: radial-gradient(
+      rgba(255, 255, 255, 0.05) 1px,
+      transparent 1px
+    );
+  background-size: 3px 3px;
 }

@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, Pill, Banner, LinkButton } from '@/app/icp/ui';
-import { getTrackingToken, getRecentSignals, fireTestSignal, type TokenInfo, type RecentSignal } from '@/lib/web/signals-api';
+import { Card, Pill, Banner, WhatsNext } from '@/app/icp/ui';
+import { usePagination, Pagination } from '@/lib/web/pagination';
+import { getTrackingToken, getRecentSignals, fireTestSignal, runResearch, type TokenInfo, type RecentSignal } from '@/lib/web/signals-api';
 
 const SOURCE_TONE: Record<string, 'green' | 'amber' | 'blue' | 'gray'> = {
   website: 'blue',
   crm_webhook: 'green',
   email_webhook: 'amber',
+  research: 'amber',
 };
 
 function timeAgo(iso: string): string {
@@ -24,6 +26,7 @@ export default function SignalsPage() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [researching, setResearching] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +56,20 @@ export default function SignalsPage() {
     else setError(res.error?.message ?? 'Test failed.');
     setTesting(false);
   };
+
+  const runResearchNow = async () => {
+    setResearching(true); setNotice(null); setError(null);
+    const res = await runResearch();
+    if (res.ok && res.data) {
+      const d = res.data;
+      if (!d.scraped) setNotice(`Couldn't research ${d.account_name ?? 'the account'} (no domain to scrape).`);
+      else setNotice(`Researched ${d.account_name ?? d.account_id} via ${d.source} (${d.model_used}): ${d.published} new signal${d.published === 1 ? '' : 's'}, ${d.discarded} discarded.`);
+      await loadSignals();
+    } else setError(res.error?.message ?? 'Research failed.');
+    setResearching(false);
+  };
+
+  const pg = usePagination(signals, 25);
 
   if (loading) return <p className="text-sm text-white/40">Loading…</p>;
 
@@ -85,10 +102,26 @@ export default function SignalsPage() {
           </div>
         )}
         <div className="flex items-center gap-3">
-          <button onClick={runTest} disabled={testing} className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-400 disabled:bg-white/10 disabled:text-white/30 transition">
+          <button onClick={runTest} disabled={testing} className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-[0_8px_24px_-12px_rgba(197,251,80,0.55)] hover:bg-accent-hover disabled:bg-white/10 disabled:text-white/30 disabled:shadow-none transition">
             {testing ? 'Firing…' : 'Test snippet'}
           </button>
           {notice && <span className="text-xs text-emerald-200">{notice}</span>}
+        </div>
+      </Card>
+
+      {/* Third-party web research */}
+      <Card className="space-y-4">
+        <div>
+          <h2 className="text-sm font-medium text-white/85">Third-party signal research</h2>
+          <p className="mt-1 text-xs text-white/45">
+            Crawl a target account's site with Firecrawl and let the local LLM extract buying signals — funding, hiring surges, product launches, tech changes. These complement first-party website visits.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={runResearchNow} disabled={researching} className="rounded-xl border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-semibold text-accent hover:bg-accent/20 disabled:opacity-40 transition">
+            {researching ? 'Researching…' : 'Run web research'}
+          </button>
+          <span className="text-[11px] text-white/30">Researches your top-tier account. Uses Firecrawl + Ollama (mock-safe).</span>
         </div>
       </Card>
 
@@ -111,7 +144,7 @@ export default function SignalsPage() {
               </tr>
             </thead>
             <tbody>
-              {signals.map((s) => (
+              {pg.pageItems.map((s) => (
                 <tr key={s.id} className="border-b border-white/10 last:border-0 hover:bg-white/5">
                   <td className="px-4 py-2.5 font-medium text-white/85">{s.account_name ?? s.account_id.slice(0, 10)}</td>
                   <td className="px-4 py-2.5 text-white/70">{s.signal_type.replace(/_/g, ' ')}</td>
@@ -123,12 +156,10 @@ export default function SignalsPage() {
             </tbody>
           </table>
         )}
+        <Pagination {...pg} unit="signals" />
       </Card>
 
-      <div className="flex items-center justify-between border-t border-white/10 pt-6">
-        <LinkButton href="/contacts">← Back to Contacts</LinkButton>
-        <span className="text-sm text-white/35">Next: awareness scoring (Engine 08)</span>
-      </div>
+      <WhatsNext auto="Hot accounts are scored and routed to campaigns automatically as signals arrive." cta={{ label: 'Review Campaigns', href: '/plays' }} />
     </div>
   );
 }

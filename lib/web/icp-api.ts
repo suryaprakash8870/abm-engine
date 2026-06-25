@@ -55,6 +55,13 @@ export const listIcps = () => call<IcpDefinition[]>('/api/v1/icp');
 
 export const getTemplates = () => call<IcpTemplate[]>('/api/v1/icp/templates');
 
+/** Intake: turn a website URL / description into draft answers for the 12 questions. */
+export const analyzeBusiness = (input: string) =>
+  call<{ answers: Record<string, string> }>('/api/v1/icp/analyze', {
+    method: 'POST',
+    body: JSON.stringify({ input }),
+  });
+
 export const submitWizard = (answers: Record<string, string>) =>
   call<{ session_id: string; status: string }>('/api/v1/icp/wizard', {
     method: 'POST',

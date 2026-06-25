@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Card, Pill, Banner, LinkButton } from '../../icp/ui';
+import { usePagination, Pagination } from '@/lib/web/pagination';
 import {
   getTamAccounts,
   getEnrichmentAccounts,
@@ -56,6 +57,13 @@ export default function AccountsPage() {
     };
   }, [jobId]);
 
+  // Derived + paginated before any early return (rules of hooks).
+  const enriched = enr?.accounts ?? [];
+  const showEnriched = enriched.length > 0;
+  const total = showEnriched ? enriched.length : raw.length;
+  const pgEnr = usePagination(enriched, 25);
+  const pgRaw = usePagination(raw, 25);
+
   if (loading) return <p className="text-sm text-white/40">Loading account list…</p>;
   if (error) {
     return (
@@ -65,10 +73,6 @@ export default function AccountsPage() {
       </div>
     );
   }
-
-  const enriched = enr?.accounts ?? [];
-  const showEnriched = enriched.length > 0;
-  const total = showEnriched ? enriched.length : raw.length;
 
   return (
     <div className="space-y-6">
@@ -102,7 +106,7 @@ export default function AccountsPage() {
           </thead>
           <tbody>
             {showEnriched
-              ? enriched.map((a) => (
+              ? pgEnr.pageItems.map((a) => (
                   <tr key={a.account_id} className="border-b border-white/10 last:border-0 hover:bg-white/5" title={a.reason ?? ''}>
                     <td className="px-4 py-2.5 font-medium text-white/85">{a.name}</td>
                     <td className="px-4 py-2.5 text-white/60">{a.domain}</td>
@@ -119,7 +123,7 @@ export default function AccountsPage() {
                     </td>
                   </tr>
                 ))
-              : raw.map((a) => (
+              : pgRaw.pageItems.map((a) => (
                   <tr key={a.id} className="border-b border-white/10 last:border-0 hover:bg-white/5">
                     <td className="px-4 py-2.5 font-medium text-white/85">{a.name}</td>
                     <td className="px-4 py-2.5 text-white/60">{a.domain}</td>
@@ -130,6 +134,9 @@ export default function AccountsPage() {
                 ))}
           </tbody>
         </table>
+        {showEnriched
+          ? <Pagination {...pgEnr} unit="companies" />
+          : <Pagination {...pgRaw} unit="companies" />}
       </Card>
 
       <div className="flex items-center justify-between border-t border-white/10 pt-6">

@@ -14,7 +14,7 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../db/client';
-import { anthropic, MODELS } from '../../clients/anthropic';
+import { llmProvider, llmStructured } from '../../clients/llm';
 import type { AccountId, Tier } from '../../events';
 import {
   FORMULA_TOOL,
@@ -82,21 +82,20 @@ async function generateFormulaViaClaude(icp: {
   signals: Record<string, unknown>;
   exclusions: Record<string, unknown>;
 }): Promise<ScoringCriterion[]> {
-  const resp = await anthropic().messages.create({
-    model: MODELS.reasoning,
-    max_tokens: 1500,
+  // Provider-agnostic (Ollama default | Anthropic). Mock mode throws so the
+  // caller falls back to the equal-weight default formula.
+  if (llmProvider() === 'mock') throw new Error('LLM in mock mode — using default scoring formula');
+
+  const input = await llmStructured({
+    toolName: FORMULA_TOOL_NAME,
+    schema: FORMULA_TOOL.input_schema as unknown as Record<string, unknown>,
     system: FORMULA_SYSTEM_PROMPT,
-    tools: [FORMULA_TOOL],
-    tool_choice: { type: 'tool', name: FORMULA_TOOL_NAME },
-    messages: [{ role: 'user', content: buildFormulaPrompt(icp) }],
+    user: buildFormulaPrompt(icp),
+    model: 'reasoning',
+    maxTokens: 1500,
   });
 
-  const toolUse = resp.content.find((b) => b.type === 'tool_use');
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    throw new Error('Claude did not return a scoring formula tool call');
-  }
-
-  const raw = (toolUse.input as { criteria?: unknown }).criteria;
+  const raw = (input as { criteria?: unknown }).criteria;
   if (!Array.isArray(raw) || raw.length === 0) {
     throw new Error('Claude returned an empty criteria array');
   }

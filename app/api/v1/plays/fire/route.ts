@@ -3,6 +3,7 @@
 import { resolveWorkspaceId } from '@/lib/auth/workspace';
 import { fireManualPlay } from '@/lib/engines/demand-gen-orchestrator/service';
 import { publishPlayFired } from '@/lib/engines/demand-gen-orchestrator/publisher';
+import { notifyPlayFired } from '@/lib/engines/demand-gen-orchestrator/notify';
 import { newCorrelationId } from '@/lib/events';
 import { ok, fail, handleRouteError } from '@/lib/http/respond';
 
@@ -17,6 +18,7 @@ export async function POST(req: Request) {
 
     if (result.status === 'fired') {
       await publishPlayFired(result.payload, { workspaceId, correlationId });
+      await notifyPlayFired(workspaceId, result.payload); // best-effort Telegram alert
       return ok({ status: 'fired', play: result.payload });
     }
     return ok({ status: result.status, reason: result.reason });

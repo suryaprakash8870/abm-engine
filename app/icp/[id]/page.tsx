@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Card, SectionTitle, Pill, ChipList, ConfidenceBar, LinkButton, Banner } from '../ui';
+import { Card, SectionTitle, Pill, ChipList, ConfidenceBar, LinkButton, NextEngineButton, Banner } from '../ui';
 import { getIcp, getLatestTam, type IcpDefinition, type TamLatest } from '@/lib/web/icp-api';
 
 /** Live status of the auto-triggered TAM build (Engine 02) for this ICP. */
@@ -156,7 +156,13 @@ export default function IcpReviewPage() {
 
       <div className="space-y-4 border-t border-white/10 pt-6">
         <TamSection icpId={id} />
-        <LinkButton href="/icp">← Back</LinkButton>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <LinkButton href="/icp">← Back</LinkButton>
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-white/35">Next: TAM Builder (Engine 02)</span>
+            <NextEngineButton href="/tal">Open Account List</NextEngineButton>
+          </div>
+        </div>
       </div>
     </div>
   );

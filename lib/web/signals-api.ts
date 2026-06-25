@@ -47,8 +47,23 @@ export interface AccountSignals {
   }>;
 }
 
+export interface ResearchResult {
+  account_id: string;
+  account_name: string | null;
+  scraped: boolean;
+  source: 'live' | 'mock';
+  model_used: string;
+  url: string | null;
+  findings: Array<{ kind: string; confidence: number; evidence: string }>;
+  published: number;
+  duplicates: number;
+  discarded: number;
+}
+
 export const getTrackingToken = () => call<TokenInfo>('/api/v1/signals/token');
 export const getRecentSignals = () => call<RecentSignal[]>('/api/v1/signals');
 export const getAccountSignals = (accountId: string) => call<AccountSignals>(`/api/v1/signals/account/${accountId}`);
 export const fireTestSignal = () =>
   call<{ status: string; account_id: string; message: string }>('/api/v1/signals/test', { method: 'POST', body: '{}' });
+export const runResearch = (accountId?: string) =>
+  call<ResearchResult>('/api/v1/signals/research', { method: 'POST', body: JSON.stringify(accountId ? { account_id: accountId } : {}) });

@@ -10,7 +10,7 @@ import Link from 'next/link';
 export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <div
-      className={`rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-xl shadow-black/20 backdrop-blur-sm ${className}`}
+      className={`relative rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 shadow-[0_24px_60px_-30px_rgba(0,0,0,0.7)] backdrop-blur-xl ${className}`}
     >
       {children}
     </div>
@@ -70,7 +70,7 @@ export function ConfidenceBar({ value, label }: { value: number; label?: string 
   );
 }
 
-/** Blue-accent primary action (form submits, main CTAs). */
+/** Lime-accent primary action (form submits, main CTAs). */
 export function PrimaryButton({
   children,
   onClick,
@@ -87,10 +87,50 @@ export function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/30"
+      className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-[0_0_0_1px_rgba(197,251,80,0.25),0_8px_24px_-12px_rgba(197,251,80,0.55)] transition hover:bg-accent-hover hover:shadow-[0_0_0_1px_rgba(197,251,80,0.4),0_10px_30px_-10px_rgba(197,251,80,0.7)] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/30 disabled:shadow-none"
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Footer CTA used at the bottom of every engine page to advance to the next
+ * engine. Lime accent + arrow so it reads as the primary "what to do next".
+ */
+export function NextEngineButton({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-[0_8px_24px_-12px_rgba(197,251,80,0.55)] transition hover:bg-accent-hover"
+    >
+      {children}
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 12h14M13 5l7 7-7 7" />
+      </svg>
+    </Link>
+  );
+}
+
+/**
+ * "What happens next" footer hint. Replaces the old engine-to-engine "Next"
+ * stepper with business-language guidance: what the platform now does
+ * automatically, plus an optional link to the next thing the user might review.
+ */
+export function WhatsNext({ auto, cta }: { auto: string; cta?: { label: string; href: string } }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-3">
+      <p className="flex items-center gap-2.5 text-[13px] text-white/55">
+        <span className="text-accent">✶</span>
+        <span><span className="font-medium text-white/75">What happens next:</span> {auto}</span>
+      </p>
+      {cta && (
+        <Link href={cta.href} className="inline-flex shrink-0 items-center gap-1.5 text-[13px] font-semibold text-accent transition hover:text-accent-hover">
+          {cta.label}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 5l7 7-7 7" /></svg>
+        </Link>
+      )}
+    </div>
   );
 }
 

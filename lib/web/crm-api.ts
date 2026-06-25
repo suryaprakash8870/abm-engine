@@ -37,3 +37,19 @@ export const getCrmConnections = () => call<CrmConnection[]>('/api/v1/crm/connec
 export const connectHubspot = () => call<{ connected: boolean; portal_id: string }>('/api/v1/oauth/hubspot', { method: 'POST' });
 export const disconnectHubspot = () => call<{ connected: boolean }>('/api/v1/oauth/hubspot', { method: 'DELETE' });
 export const getSyncLog = () => call<SyncLogRow[]>('/api/v1/crm/sync-log');
+
+// ── BYO API keys (data / delivery providers) ─────────────────────────────────
+export const getIntegrationKeys = () => call<{ configured: string[] }>('/api/v1/integrations/keys');
+export const saveIntegrationKey = (provider: string, key: string) =>
+  call<{ provider: string; configured: boolean }>('/api/v1/integrations/keys', { method: 'POST', body: JSON.stringify({ provider, key }) });
+export const removeIntegrationKey = (provider: string) =>
+  call<{ provider: string; configured: boolean }>('/api/v1/integrations/keys', { method: 'DELETE', body: JSON.stringify({ provider }) });
+export const sendTelegramTest = () =>
+  call<{ sent: boolean }>('/api/v1/integrations/telegram/test', { method: 'POST', body: '{}' });
+
+export interface CrmImportSummary {
+  mode: string; companies: number; contacts: number; deals: number;
+  closed_won: number; closed_lost: number; events_emitted: number;
+}
+export const importFromCrm = () =>
+  call<CrmImportSummary>('/api/v1/crm/import', { method: 'POST', body: '{}' });
