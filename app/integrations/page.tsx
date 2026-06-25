@@ -13,6 +13,22 @@ const OUTCOME_TONE: Record<string, 'green' | 'red' | 'amber'> = {
   success: 'green', failed: 'red', dead_lettered: 'amber',
 };
 
+/** Pull a readable error string out of a failed sync-log row's stored detail. */
+function syncErrorText(detail: unknown): string {
+  if (!detail || typeof detail !== 'object') return 'write failed';
+  const d = detail as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof d.error === 'string') parts.push(d.error);
+  const inner = d.detail;
+  if (typeof inner === 'string') parts.push(inner);
+  else if (inner && typeof inner === 'object') {
+    const di = inner as Record<string, unknown>;
+    if (typeof di.message === 'string') parts.push(di.message);
+    else parts.push(JSON.stringify(inner).slice(0, 240));
+  }
+  return parts.join(' — ') || 'write failed';
+}
+
 type Tab = 'connectors' | 'log' | 'api' | 'mcp';
 
 const TABS: { id: Tab; label: string }[] = [
@@ -68,7 +84,10 @@ export default function IntegrationsPage() {
   };
   useEffect(() => { void load(); }, []);
 
-  const pg = usePagination(log, 25);
+  const [failedOnly, setFailedOnly] = useState(false);
+  const filteredLog = failedOnly ? log.filter((r) => r.outcome !== 'success') : log;
+  const failedCount = log.filter((r) => r.outcome !== 'success').length;
+  const pg = usePagination(filteredLog, 25);
 
   const hubspot = conns.find((c) => c.crm_type === 'hubspot');
   const connected = hubspot?.status === 'connected';
@@ -213,8 +232,18 @@ export default function IntegrationsPage() {
       {/* Sync Log */}
       {tab === 'log' && (
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-white/10 px-4 py-3"><h2 className="text-sm font-medium text-white/85">CRM Sync Log</h2></div>
-          {log.length === 0 ? (
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+            <h2 className="text-sm font-medium text-white/85">CRM Sync Log</h2>
+            {failedCount > 0 && (
+              <button
+                onClick={() => setFailedOnly((v) => !v)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${failedOnly ? 'border-red-400/40 bg-red-500/15 text-red-200' : 'border-white/15 text-white/55 hover:text-white'}`}
+              >
+                {failedOnly ? `Showing failed (${failedCount})` : `Failed only (${failedCount})`}
+              </button>
+            )}
+          </div>
+          {filteredLog.length === 0 ? (
             <p className="px-4 py-10 text-center text-sm text-white/35">No CRM writes yet. They appear as the pipeline runs.</p>
           ) : (
             <table className="w-full text-sm">
@@ -234,7 +263,10 @@ export default function IntegrationsPage() {
                       <p className="font-mono text-xs text-white/35">{r.record_id.slice(0, 16)}…</p>
                     </td>
                     <td className="px-4 py-2.5 text-white/60">{r.operation}</td>
-                    <td className="px-4 py-2.5"><Pill tone={OUTCOME_TONE[r.outcome] ?? 'gray'}>{r.outcome}</Pill></td>
+                    <td className="px-4 py-2.5">
+                      <Pill tone={OUTCOME_TONE[r.outcome] ?? 'gray'}>{r.outcome}</Pill>
+                      {r.outcome !== 'success' && <p className="mt-1 max-w-[28rem] text-xs text-red-300/70">{syncErrorText(r.detail)}</p>}
+                    </td>
                     <td className="px-4 py-2.5 text-xs text-white/40">{new Date(r.synced_at).toLocaleString()}</td>
                   </tr>
                 ))}

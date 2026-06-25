@@ -288,7 +288,7 @@ export async function getConnectionStatus(workspaceId: string) {
 
 // ── Sync log (user-facing debugging) ─────────────────────────────────────────
 
-export async function getSyncLog(workspaceId: string, limit = 100) {
+export async function getSyncLog(workspaceId: string, limit = 500) {
   const rows = await prisma.syncLog.findMany({ where: { workspaceId }, orderBy: { syncedAt: 'desc' }, take: limit });
   return rows.map((r) => ({
     id: r.id, record_type: r.recordType, record_id: r.recordId, operation: r.operation,
