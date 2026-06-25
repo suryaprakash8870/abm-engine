@@ -62,7 +62,9 @@ export function batchByType(records: CrmWriteRecord[], maxBatchSize = 100): CrmW
 
 // ── Step 3: Redis token-bucket rate limit (8 req/s default) ──────────────────
 
-export async function acquireRateLimitToken(workspaceId: string, ratePerSecond = 8): Promise<void> {
+// 3 records/sec — each upsert is 2 HubSpot calls (search + write), so this keeps
+// us under HubSpot's ~4 req/sec search cap. The adapter also retries 429s.
+export async function acquireRateLimitToken(workspaceId: string, ratePerSecond = 3): Promise<void> {
   try {
     const r = getRedisConnection();
     const windowKey = `crmrate:${workspaceId}:${Math.floor(Date.now() / 1000)}`;

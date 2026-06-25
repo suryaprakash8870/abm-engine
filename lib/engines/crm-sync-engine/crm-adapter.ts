@@ -88,12 +88,20 @@ export class HubspotAdapter implements CrmAdapter {
   readonly kind = 'hubspot';
   constructor(private readonly token: string) {}
 
-  private async hs(path: string, method: string, body?: unknown): Promise<{ ok: boolean; status: number; json: Record<string, unknown> }> {
+  private async hs(path: string, method: string, body?: unknown, attempt = 0): Promise<{ ok: boolean; status: number; json: Record<string, unknown> }> {
     const res = await fetch(`${HS_BASE}${path}`, {
       method,
       headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     });
+    // HubSpot enforces a per-second rate cap; on 429 wait (honouring Retry-After)
+    // and retry with exponential backoff instead of dead-lettering the record.
+    if (res.status === 429 && attempt < 5) {
+      const retryAfter = Number(res.headers.get('retry-after'));
+      const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(4000, 300 * 2 ** attempt);
+      await new Promise((r) => setTimeout(r, waitMs));
+      return this.hs(path, method, body, attempt + 1);
+    }
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return { ok: res.ok, status: res.status, json };
   }
