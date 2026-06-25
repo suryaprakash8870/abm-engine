@@ -9,6 +9,7 @@
  */
 
 import { prisma } from '../../db/client';
+import { Prisma } from '@prisma/client';
 
 const DEMO_TAG = '__demo__'; // marker we drop on a few rows so resets can find them later
 
@@ -901,87 +902,85 @@ export async function seedDemoWorkspace(workspaceId: string): Promise<SeedSummar
       },
     });
   }
-  // Closed deals — 3 won + 2 lost
-  const wonDeals = [
-    { domain: 'cobalt.com', amount: 84_000, days: 38 },
-    { domain: 'vertex.com', amount: 52_000, days: 47 },
-    { domain: 'nimbus.com', amount: 36_000, days: 58 },
-  ];
-  const lostDeals = [
-    { domain: 'apex.com',     amount: 24_000, days: 71 },
-    { domain: 'pinnacle.com', amount: 18_000, days: 89 },
-  ];
+  // Closed deals — generate a realistic VOLUME (~100 won / 200 lost) so the
+  // flywheel's signal correlation (suppressed below 20 closed deals) activates
+  // and the pipeline/win-rate metrics look real. Deterministic + idempotent.
+  const WON_TARGET = 100;
+  const LOST_TARGET = 200;
+  // Weighted pools: Tier 1 accounts win most; Tier 3 / disqualified lose most.
+  const repeat = (c: CompanyFixture, n: number) => Array.from({ length: n }, () => c);
+  const wonPool = ALL_COMPANIES.flatMap((c) => repeat(c, c.tier === 1 ? 6 : c.tier === 2 ? 3 : 1));
+  const lostPool = ALL_COMPANIES.flatMap((c) => repeat(c, c.tier === 1 ? 1 : c.tier === 2 ? 3 : 6));
+
+  type WinLossRow = Prisma.WinLossAnalysisCreateManyInput;
+  type AttrRow = Prisma.AttributionEventCreateManyInput;
+  const winLossRows: WinLossRow[] = [];
+  const attributionRows: AttrRow[] = [];
+  const SUBTYPES = ['pricing_page_view', 'demo_clicked', 'case_study_view'];
   let dealIdx = 0;
-  for (const d of wonDeals) {
-    const enr = enrichedByDomain.get(d.domain)!;
-    const c = ALL_COMPANIES.find((cc) => cc.domain === d.domain)!;
+
+  for (let i = 0; i < WON_TARGET; i++) {
+    const c = wonPool[i % wonPool.length];
+    const enr = enrichedByDomain.get(c.domain)!;
     const dealId = `${DEMO_TAG}_won_${dealIdx++}`;
-    await prisma.winLossAnalysis.create({
-      data: {
-        workspaceId,
-        dealId,
-        accountId: enr.id,
-        outcome: 'won',
-        amount: d.amount,
-        accountAttributes: { tier: c.tier, domain: d.domain, days_to_close: d.days, owner_id: 'sdr@yourcompany.com' },
-        closedAt: daysAgo(2),
-        analyzedAt: daysAgo(1),
-      },
+    const base = c.tier === 1 ? 70_000 : c.tier === 2 ? 36_000 : 14_000;
+    const amount = base + (i % 6) * 4_000;
+    const days = (c.tier === 1 ? 35 : c.tier === 2 ? 55 : 80) + (i % 7);
+    winLossRows.push({
+      workspaceId, dealId, accountId: enr.id, outcome: 'won', amount,
+      accountAttributes: { tier: c.tier, domain: c.domain, days_to_close: days, owner_id: 'sdr@yourcompany.com' },
+      closedAt: daysAgo(2 + (i % 110)), analyzedAt: daysAgo(1 + (i % 110)),
     });
-    // 3 touches per deal — 2 signals + 1 play
-    for (let i = 0; i < 3; i++) {
-      await prisma.attributionEvent.create({
-        data: {
-          workspaceId,
-          accountId: enr.id,
-          dealId,
-          touchType: i === 2 ? 'play' : 'signal',
-          touchSubtype: i === 2 ? 'hot_account_escalation' : 'pricing_page_view',
-          weight: 1 / 3,
-          occurredBeforePipeline: true,
-          occurredAt: daysAgo(20 - i * 5),
-          recordedAt: daysAgo(1),
-        },
-      });
+    // Attribution touches for the first 25 won deals (keeps insert volume sane
+    // while still populating the attribution + correlation views).
+    if (i < 25) {
+      for (let t = 0; t < 3; t++) {
+        attributionRows.push({
+          workspaceId, accountId: enr.id, dealId,
+          touchType: t === 2 ? 'play' : 'signal',
+          touchSubtype: t === 2 ? 'hot_account_escalation' : SUBTYPES[t % SUBTYPES.length],
+          weight: 1 / 3, occurredBeforePipeline: true,
+          occurredAt: daysAgo(20 - t * 5), recordedAt: daysAgo(1),
+        });
+      }
     }
   }
-  for (const d of lostDeals) {
-    const enr = enrichedByDomain.get(d.domain)!;
-    const c = ALL_COMPANIES.find((cc) => cc.domain === d.domain)!;
+  for (let i = 0; i < LOST_TARGET; i++) {
+    const c = lostPool[i % lostPool.length];
+    const enr = enrichedByDomain.get(c.domain)!;
     const dealId = `${DEMO_TAG}_lost_${dealIdx++}`;
-    await prisma.winLossAnalysis.create({
-      data: {
-        workspaceId,
-        dealId,
-        accountId: enr.id,
-        outcome: 'lost',
-        amount: d.amount,
-        accountAttributes: { tier: c.tier, domain: d.domain, days_to_close: d.days, owner_id: 'sdr@yourcompany.com' },
-        closedAt: daysAgo(5),
-        analyzedAt: daysAgo(4),
-      },
+    const base = c.tier === 1 ? 40_000 : c.tier === 2 ? 22_000 : 10_000;
+    const amount = base + (i % 5) * 2_000;
+    const days = (c.tier === 1 ? 60 : c.tier === 2 ? 80 : 100) + (i % 9);
+    winLossRows.push({
+      workspaceId, dealId, accountId: enr.id, outcome: 'lost', amount,
+      accountAttributes: { tier: c.tier, domain: c.domain, days_to_close: days, owner_id: 'sdr@yourcompany.com' },
+      closedAt: daysAgo(5 + (i % 110)), analyzedAt: daysAgo(4 + (i % 110)),
     });
   }
+  await prisma.winLossAnalysis.createMany({ data: winLossRows });
+  await prisma.attributionEvent.createMany({ data: attributionRows });
+
   // Flywheel metrics (the quick-look numbers on insights)
   await prisma.flywheelMetric.createMany({
     data: [
       { workspaceId, metricKey: 'pipeline_this_month',  value: 1_240_000, period: 'month' },
-      { workspaceId, metricKey: 'win_rate_overall',     value: 0.21,      period: 'month' },
-      { workspaceId, metricKey: 'avg_deal_size_overall',value: 41_000,    period: 'month' },
-      { workspaceId, metricKey: 'days_to_close_avg',    value: 62,        period: 'month' },
-      { workspaceId, metricKey: 'closed_won_count_qtr', value: 3,         period: 'quarter' },
+      { workspaceId, metricKey: 'win_rate_overall',     value: 0.33,      period: 'month' },
+      { workspaceId, metricKey: 'avg_deal_size_overall',value: 48_000,    period: 'month' },
+      { workspaceId, metricKey: 'days_to_close_avg',    value: 52,        period: 'month' },
+      { workspaceId, metricKey: 'closed_won_count_qtr', value: WON_TARGET, period: 'quarter' },
     ],
   });
-  // Signal correlation — needs ≥20 sample size to render. With 31 signals + 3 wins we set realistic numbers.
+  // Signal correlation — now backed by 300 closed deals, so it renders.
   await prisma.signalCorrelationData.createMany({
     data: [
-      { workspaceId, signalCombination: ['pricing_page_view', 'demo_clicked'],   correlationScore: 0.74, sampleSize: 24 },
-      { workspaceId, signalCombination: ['demo_clicked',      'case_study_view'],correlationScore: 0.61, sampleSize: 21 },
-      { workspaceId, signalCombination: ['event_registration','demo_clicked'],   correlationScore: 0.52, sampleSize: 20 },
+      { workspaceId, signalCombination: ['pricing_page_view', 'demo_clicked'],    correlationScore: 0.74, sampleSize: 180 },
+      { workspaceId, signalCombination: ['demo_clicked',       'case_study_view'],correlationScore: 0.61, sampleSize: 140 },
+      { workspaceId, signalCombination: ['event_registration', 'demo_clicked'],   correlationScore: 0.52, sampleSize: 95 },
     ],
   });
-  counts.deals = wonDeals.length + lostDeals.length;
-  counts.attribution = wonDeals.length * 3;
+  counts.deals = WON_TARGET + LOST_TARGET;
+  counts.attribution = attributionRows.length;
 
   return { workspaceId, counts };
 }
