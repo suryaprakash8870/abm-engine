@@ -1,7 +1,9 @@
 /** GET /api/v1/signals/snippet/:token — serve the tracking JS (public). */
 
+import { publicOrigin } from '@/lib/http/origin';
+
 export function GET(req: Request, { params }: { params: { token: string } }) {
-  const origin = new URL(req.url).origin;
+  const origin = publicOrigin(req);
   const endpoint = `${origin}/api/v1/signals/track`;
   const js = `(function(){
   var T=${JSON.stringify(params.token)},E=${JSON.stringify(endpoint)};

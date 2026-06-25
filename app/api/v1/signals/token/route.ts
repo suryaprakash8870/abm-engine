@@ -3,12 +3,13 @@
 import { resolveWorkspaceId } from '@/lib/auth/workspace';
 import { getOrCreateTrackingToken } from '@/lib/engines/signal-engine/service';
 import { ok, handleRouteError } from '@/lib/http/respond';
+import { publicOrigin } from '@/lib/http/origin';
 
 export async function GET(req: Request) {
   try {
     const workspaceId = resolveWorkspaceId(req);
     const token = await getOrCreateTrackingToken(workspaceId);
-    const origin = new URL(req.url).origin;
+    const origin = publicOrigin(req);
     return ok({
       token,
       snippet_url: `${origin}/api/v1/signals/snippet/${token}`,
