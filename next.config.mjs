@@ -5,6 +5,8 @@ const nextConfig = {
     // BullMQ / ioredis are server-only; keep them out of the client bundle.
     // (Next 14 key; becomes top-level `serverExternalPackages` in Next 15.)
     serverComponentsExternalPackages: ['bullmq', 'ioredis', 'firecrawl', 'undici'],
+    // Enables instrumentation.ts (boots in-process BullMQ workers on free tier).
+    instrumentationHook: true,
   },
 };
 

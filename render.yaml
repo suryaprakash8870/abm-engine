@@ -45,6 +45,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Boot the BullMQ engine consumers inside this web process (no free worker
+      # plan on Render). See instrumentation.ts.
+      - key: RUN_WORKER_IN_WEB
+        value: "true"
       - key: DATABASE_URL
         fromDatabase: { name: abm-postgres, property: connectionString }
       - key: DIRECT_URL

@@ -4,15 +4,19 @@ The repo ships a `render.yaml` Blueprint on Render's **free tier**: the Next.js
 web app, managed Postgres, and managed Redis (Key-Value).
 
 > **Worker note:** Render has no free background-worker plan (~$7/mo minimum),
-> so the BullMQ worker is **not** in the free Blueprint. The app runs and is
-> browsable, but event-driven automation (the engine pipeline) won't process in
-> the cloud. To run it: `npm run worker` locally pointed at the Render DB/Redis,
-> or add a `type: worker` service back to `render.yaml` once on a paid plan.
+> so there is no separate worker service. Instead the web service boots the
+> BullMQ engine consumers **in-process** via `instrumentation.ts`, switched on by
+> `RUN_WORKER_IN_WEB=true` (already set in the Blueprint). One free service runs
+> both the app and the pipeline.
 >
-> Free-tier caveats: the web service spins down after ~15 min idle (first
-> request after is slow), and free Postgres expires after ~30 days.
-> Migrations run inside `buildCommand` (free plans don't support
-> `preDeployCommand`).
+> Caveat: the free web service **spins down after ~15 min idle**, which also
+> pauses the in-process worker — queued events wait in Redis and drain on the
+> next request that wakes the service. Fine for demos; for always-on processing
+> move to a paid plan and add a dedicated `type: worker` service (or set
+> `RUN_WORKER_IN_WEB=false` and run `npm run worker` separately).
+>
+> Other free-tier caveats: free Postgres expires after ~30 days. Migrations run
+> inside `buildCommand` (free plans don't support `preDeployCommand`).
 
 ## One-time setup
 
