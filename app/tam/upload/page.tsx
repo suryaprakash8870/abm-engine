@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, PrimaryButton, Banner, LinkButton, inputClass, selectClass } from '../../icp/ui';
 import { uploadCsvAccounts } from '@/lib/web/icp-api';
@@ -36,7 +36,7 @@ function parseCsv(text: string): { headers: string[]; rows: Record<string, strin
 
 const guess = (headers: string[], re: RegExp) => headers.find((h) => re.test(h)) ?? '';
 
-export default function CsvUploadPage() {
+function CsvUploadInner() {
   const router = useRouter();
   const icpId = useSearchParams().get('icp') ?? '';
 
@@ -134,5 +134,14 @@ export default function CsvUploadPage() {
         </div>
       </Card>
     </div>
+  );
+}
+
+export default function CsvUploadPage() {
+  // useSearchParams() requires a Suspense boundary for the production build.
+  return (
+    <Suspense fallback={null}>
+      <CsvUploadInner />
+    </Suspense>
   );
 }
