@@ -156,6 +156,42 @@ export async function recordsForContactsMapped(workspaceId: string, contactIds: 
   return contacts.map((c) => ({ recordType: 'contact', recordId: c.id, fields: { full_name: c.fullName, email: c.email, title: c.title, abm_stakeholder_role: c.stakeholderRole } }));
 }
 
+// ── Manual "Push to HubSpot" — on-demand full sync of the current TAL ─────────
+
+export interface CrmSyncSummary {
+  mode: 'live' | 'mock';
+  accounts: number;
+  contacts: number;
+  synced: number;
+  errors: number;
+}
+
+/**
+ * Push the workspace's current TAL accounts (with tiers/scores) + their mapped
+ * contacts to the CRM in one shot. Powers the "Push to HubSpot" button — the
+ * same writeRecords path the event handlers use, just triggered on demand.
+ * Live when a CRM connection or HUBSPOT_SERVICE_KEY is present, else mock.
+ */
+export async function syncTalToCrm(workspaceId: string, correlationId: string): Promise<CrmSyncSummary> {
+  const token = await resolveAccessToken(workspaceId, 'hubspot');
+  const mode: 'live' | 'mock' = token || process.env.HUBSPOT_SERVICE_KEY ? 'live' : 'mock';
+
+  const accountRecords = await recordsForTalFinalized(workspaceId);
+  const contactIds = (await prisma.contact.findMany({ where: { workspaceId }, select: { id: true } })).map((c) => c.id);
+  const contactRecords = await recordsForContactsMapped(workspaceId, contactIds);
+
+  const acct = await writeRecords(workspaceId, 'manual_sync_accounts', accountRecords, `${correlationId}_acct`);
+  const cont = await writeRecords(workspaceId, 'manual_sync_contacts', contactRecords, `${correlationId}_cont`);
+
+  return {
+    mode,
+    accounts: accountRecords.length,
+    contacts: contactRecords.length,
+    synced: acct.recordsSynced + cont.recordsSynced,
+    errors: acct.errors + cont.errors,
+  };
+}
+
 // ── Step 6: parse inbound deal webhook → won/lost/open ───────────────────────
 
 const WON_STAGES = /closed.?won|won/i;

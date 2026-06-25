@@ -53,3 +53,9 @@ export interface CrmImportSummary {
 }
 export const importFromCrm = () =>
   call<CrmImportSummary>('/api/v1/crm/import', { method: 'POST', body: '{}' });
+
+export interface CrmSyncSummary {
+  mode: string; accounts: number; contacts: number; synced: number; errors: number;
+}
+export const syncToCrm = () =>
+  call<CrmSyncSummary>('/api/v1/crm/sync', { method: 'POST', body: '{}' });
