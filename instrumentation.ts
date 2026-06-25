@@ -7,25 +7,15 @@
  * `npm run worker` process (workers/index.ts) remains the right setup on paid
  * plans — this is the single-service fallback.
  *
- * Guards:
- *   - nodejs runtime only (never the edge runtime — BullMQ/ioredis are node-only)
- *   - opt-in via RUN_WORKER_IN_WEB so local `next dev` + a separate worker don't
- *     double-register the same consumers.
+ * IMPORTANT: the dynamic import MUST sit inside the `NEXT_RUNTIME === 'nodejs'`
+ * check. Next compiles this file for BOTH the node and edge runtimes; webpack
+ * replaces process.env.NEXT_RUNTIME with a literal per build, so in the edge
+ * build this branch is dead code and the node-only deps (ioredis, crypto) are
+ * stripped. An early `return` would NOT achieve that and the edge build fails.
  */
 
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-  if (process.env.RUN_WORKER_IN_WEB !== 'true') return;
-
-  const { engines } = await import('./lib/engines/registry');
-
-  for (const engine of engines) {
-    engine.register();
-    console.log(
-      JSON.stringify({ level: 'info', msg: 'engine registered (in-web)', engine: engine.slug }),
-    );
+  if (process.env.NEXT_RUNTIME === 'nodejs' && process.env.RUN_WORKER_IN_WEB === 'true') {
+    await import('./lib/engines/boot-workers');
   }
-  console.log(
-    JSON.stringify({ level: 'info', msg: 'in-web workers started', engineCount: engines.length }),
-  );
 }
