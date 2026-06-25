@@ -103,9 +103,24 @@ export async function synthesiseContent(system: string, user: string): Promise<I
   if (shouldMockLlm()) return mockIcpContent();
 
   const emit = process.env.ICP_LLM === 'ollama' ? ollamaEmit : callEmitIcp;
-  const first = icpContentSchema.safeParse(await emit(system, user));
-  if (first.success) return first.data;
-  const second = icpContentSchema.safeParse(await emit(system, user));
-  if (second.success) return second.data;
-  throw new Error(`ICP synthesis failed schema validation: ${second.error.message}`);
+  try {
+    const first = icpContentSchema.safeParse(await emit(system, user));
+    if (first.success) return first.data;
+    const second = icpContentSchema.safeParse(await emit(system, user));
+    if (second.success) return second.data;
+    throw new Error(`ICP synthesis failed schema validation: ${second.error.message}`);
+  } catch (err) {
+    // The LLM was unreachable (e.g. Ollama tunnel down) or returned junk twice.
+    // Don't dead-end the wizard — fall back to a clearly-labelled mock ICP so the
+    // flow completes. The rationale field tells the user it's mock.
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        msg: 'LLM synthesis unreachable — falling back to mock ICP',
+        provider: process.env.ICP_LLM ?? 'default',
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return mockIcpContent();
+  }
 }
