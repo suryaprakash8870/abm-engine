@@ -103,24 +103,38 @@ export async function synthesiseContent(system: string, user: string): Promise<I
   if (shouldMockLlm()) return mockIcpContent();
 
   const emit = process.env.ICP_LLM === 'ollama' ? ollamaEmit : callEmitIcp;
-  try {
-    const first = icpContentSchema.safeParse(await emit(system, user));
-    if (first.success) return first.data;
-    const second = icpContentSchema.safeParse(await emit(system, user));
-    if (second.success) return second.data;
-    throw new Error(`ICP synthesis failed schema validation: ${second.error.message}`);
-  } catch (err) {
-    // The LLM was unreachable (e.g. Ollama tunnel down) or returned junk twice.
-    // Don't dead-end the wizard — fall back to a clearly-labelled mock ICP so the
-    // flow completes. The rationale field tells the user it's mock.
-    console.warn(
-      JSON.stringify({
-        level: 'warn',
-        msg: 'LLM synthesis unreachable — falling back to mock ICP',
-        provider: process.env.ICP_LLM ?? 'default',
-        error: err instanceof Error ? err.message : String(err),
-      }),
-    );
-    return mockIcpContent();
-  }
+
+  // Call the LLM; a CONNECTION failure (e.g. Ollama tunnel down) falls back to a
+  // clearly-labelled mock ICP so the wizard never dead-ends. A successful call
+  // that returns invalid output is NOT swallowed — it surfaces as icp.error.
+  const callEmit = async (): Promise<unknown | typeof UNREACHABLE> => {
+    try {
+      return await emit(system, user);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          msg: 'LLM synthesis unreachable — falling back to mock ICP',
+          provider: process.env.ICP_LLM ?? 'default',
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      return UNREACHABLE;
+    }
+  };
+
+  const firstRaw = await callEmit();
+  if (firstRaw === UNREACHABLE) return mockIcpContent();
+  const first = icpContentSchema.safeParse(firstRaw);
+  if (first.success) return first.data;
+
+  const secondRaw = await callEmit();
+  if (secondRaw === UNREACHABLE) return mockIcpContent();
+  const second = icpContentSchema.safeParse(secondRaw);
+  if (second.success) return second.data;
+
+  // Reachable but invalid twice → a real synthesis failure (publishes icp.error).
+  throw new Error(`ICP synthesis failed schema validation: ${second.error.message}`);
 }
+
+const UNREACHABLE = Symbol('llm-unreachable');
