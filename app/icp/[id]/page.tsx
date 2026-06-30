@@ -111,10 +111,18 @@ export default function IcpReviewPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h1 className="font-display text-2xl font-medium text-white">Your ICP</h1>
-          <Pill tone="blue">{icp.mode}</Pill>
-          <Pill tone="gray">v{icp.version}</Pill>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-2xl font-medium text-white">Your ICP</h1>
+            <Pill tone="blue">{icp.mode}</Pill>
+            <Pill tone="gray">v{icp.version}</Pill>
+          </div>
+          <a
+            href={`/icp/wizard?refine=${id}`}
+            className="shrink-0 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2 text-sm font-medium text-accent transition hover:bg-accent/20"
+          >
+            Refine ICP →
+          </a>
         </div>
         <ConfidenceBar value={icp.confidence_score} label="Overall confidence" />
       </div>

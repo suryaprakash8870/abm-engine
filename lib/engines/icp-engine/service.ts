@@ -190,6 +190,8 @@ export interface SynthesisInput {
   answers: WizardAnswers;
   correlationId: string;
   sessionId?: string;
+  /** When set, refine THIS ICP (cut a new version) instead of creating a new ICP. */
+  refineIcpId?: string;
 }
 
 /** The end-to-end Mode A job (run by the synthesis worker). */
@@ -197,6 +199,16 @@ export async function runIcpSynthesis(input: SynthesisInput): Promise<IcpDefinit
   const ctx = { workspaceId: input.workspaceId, correlationId: input.correlationId };
   try {
     const content = await synthesiseIcpFromWizard(input.answers);
+    // Refine path: cut a new version of the existing ICP (history preserved).
+    if (input.refineIcpId) {
+      const rev = await reviseIcp(input.workspaceId, input.refineIcpId, content);
+      if (!rev) {
+        await markSession(input.sessionId, 'failed', null, 'ICP to refine was not found.');
+        return null;
+      }
+      await markSession(input.sessionId, 'completed', rev.def.icp_id, null);
+      return rev.def;
+    }
     const result = await finalizeIcp({ workspaceId: input.workspaceId, content, mode: 'hypothesis', correlationId: input.correlationId });
     await markSession(input.sessionId, result.ok ? 'completed' : 'failed', result.def?.icp_id ?? null, result.ok ? null : result.reason ?? null);
     return result.def;

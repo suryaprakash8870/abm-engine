@@ -49,11 +49,16 @@ export default function WizardPage() {
   const [elapsed, setElapsed] = useState(0);
   const [simPct, setSimPct] = useState(0);
   const [stageIdx, setStageIdx] = useState(0);
+  // When refining: re-running the wizard cuts a new version of THIS ICP, not a new one.
+  const [refineIcpId, setRefineIcpId] = useState<string | null>(null);
 
   useEffect(() => {
     void me().then((r) => {
       if (r.ok && r.data?.email) setName(firstName(r.data.email));
     });
+    // Read ?refine=<icpId> without useSearchParams (avoids a Suspense boundary).
+    const id = new URLSearchParams(window.location.search).get('refine');
+    if (id) setRefineIcpId(id);
   }, []);
 
   // Elapsed timer + simulated progress while generating.
@@ -127,7 +132,7 @@ export default function WizardPage() {
   async function handleGenerate() {
     setSubmitting(true);
     setErrorMsg('');
-    const r = await submitWizard(answers);
+    const r = await submitWizard(answers, refineIcpId ?? undefined);
     if (!r.ok) {
       let message = r.error?.message || 'Something went wrong.';
       if (r.status === 0 || r.status >= 500) {
@@ -164,10 +169,16 @@ export default function WizardPage() {
       {/* top bar */}
       <div className="relative z-10 flex items-center justify-between px-6 py-5 sm:px-8">
         <span className="font-display text-sm font-medium tracking-tight text-white/70">ICP Engine</span>
-        <button onClick={() => router.push('/icp')} className="text-sm text-white/40 transition hover:text-white">
+        <button onClick={() => router.push(refineIcpId ? `/icp/${refineIcpId}` : '/icp')} className="text-sm text-white/40 transition hover:text-white">
           Exit
         </button>
       </div>
+
+      {refineIcpId && !sessionId && (
+        <div className="relative z-10 mx-6 mb-1 rounded-xl border border-accent/25 bg-accent/10 px-4 py-2.5 text-sm text-accent sm:mx-8">
+          Refining your existing ICP — your answers will be saved as a <span className="font-medium">new version</span>, keeping the current one in history.
+        </div>
+      )}
 
       <div className="relative z-10 flex flex-1 items-center justify-center px-6 pb-24">
         <div className="w-full max-w-2xl">

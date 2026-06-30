@@ -21,6 +21,7 @@ export interface SynthesisJobData {
   sessionId: string;
   answers: WizardAnswers;
   correlationId: string;
+  refineIcpId?: string;
 }
 
 let queue: Queue<SynthesisJobData> | null = null;
@@ -44,6 +45,7 @@ function synthesisQueue(): Queue<SynthesisJobData> {
 export async function startWizardSynthesis(
   workspaceId: string,
   answers: WizardAnswers,
+  refineIcpId?: string,
 ): Promise<{ sessionId: string; correlationId: string }> {
   const correlationId = newCorrelationId();
   const session = await prisma.wizardSession.create({
@@ -54,6 +56,7 @@ export async function startWizardSynthesis(
     sessionId: session.id,
     answers,
     correlationId,
+    ...(refineIcpId ? { refineIcpId } : {}),
   });
   return { sessionId: session.id, correlationId };
 }

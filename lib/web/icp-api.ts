@@ -62,10 +62,10 @@ export const analyzeBusiness = (input: string) =>
     body: JSON.stringify({ input }),
   });
 
-export const submitWizard = (answers: Record<string, string>) =>
+export const submitWizard = (answers: Record<string, string>, refineIcpId?: string) =>
   call<{ session_id: string; status: string }>('/api/v1/icp/wizard', {
     method: 'POST',
-    body: JSON.stringify({ answers }),
+    body: JSON.stringify({ answers, ...(refineIcpId ? { refine_icp_id: refineIcpId } : {}) }),
   });
 
 export const getWizardStatus = (sessionId: string) =>

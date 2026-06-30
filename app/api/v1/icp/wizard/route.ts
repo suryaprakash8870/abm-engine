@@ -29,7 +29,11 @@ export async function POST(req: Request) {
       return fail('VALIDATION_ERROR', 'Wizard answers are incomplete.', parsed.error.flatten());
     }
 
-    const { sessionId } = await startWizardSynthesis(workspaceId, parsed.data);
+    // Optional: refine an existing ICP (cut a new version) instead of creating a new one.
+    const refineRaw = (body as { refine_icp_id?: unknown })?.refine_icp_id;
+    const refineIcpId = typeof refineRaw === 'string' && refineRaw.length > 0 ? refineRaw : undefined;
+
+    const { sessionId } = await startWizardSynthesis(workspaceId, parsed.data, refineIcpId);
     return ok({ session_id: sessionId, status: 'processing' }, 202);
   } catch (e) {
     return handleRouteError(e);
