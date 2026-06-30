@@ -227,9 +227,12 @@ const SIGNAL_TYPES = ['pricing_page_view', 'demo_clicked', 'case_study_view', 'w
 const DEMO_ICP = {
   firmographics: {
     industries: ['Cybersecurity', 'Cloud Infrastructure', 'Information Technology', 'Software'],
+    employee_min: 500,
+    employee_max: 5000,
     headcount: { min: 500, max: 5000 },
     revenue: ['$25M-$50M', '$50M-$100M', '$100M-$200M', '$200M-$500M'],
     geographies: ['United States', 'United Kingdom', 'Germany', 'Canada', 'Australia'],
+    business_model: 'B2B SaaS',
     fundingStages: ['series_a', 'series_b', 'series_c', 'series_d', 'public'],
   },
   technographics: {
@@ -245,6 +248,8 @@ const DEMO_ICP = {
     industries: ['Government', 'Education'],
     sub_500_headcount: true,
   },
+  // Per-category confidence the ICP page renders (averages to ~0.82 overall).
+  criteria_confidence: { firmographics: 0.86, technographics: 0.8, signals: 0.78, exclusions: 0.84 },
 };
 
 const ICP_CRITERIA = [
