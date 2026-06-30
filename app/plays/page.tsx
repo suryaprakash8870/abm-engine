@@ -43,6 +43,12 @@ export default function PlaysPage() {
 
   const pg = usePagination(plays, 25);
 
+  // Outcome/snooze buttons reflect what's already been recorded for the play.
+  const actionBtn = (active: boolean) =>
+    `rounded-md border px-2.5 py-1 text-xs font-medium whitespace-nowrap transition ${
+      active ? 'border-accent/50 bg-accent-soft text-accent' : 'border-white/10 text-white/55 hover:bg-white/10 hover:text-white/85'
+    }`;
+
   if (loading) return <p className="text-sm text-white/40">Loading play queue…</p>;
 
   return (
@@ -54,7 +60,7 @@ export default function PlaysPage() {
 
       {error && <Banner tone="red">{error}</Banner>}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+      <div className={draftFor ? 'grid items-start gap-4 lg:grid-cols-[1fr_380px]' : ''}>
         {/* Play list */}
         <Card className="overflow-hidden p-0">
           {plays.length === 0 ? (
@@ -66,31 +72,32 @@ export default function PlaysPage() {
                   <th className="px-4 py-2.5 font-medium">Play</th>
                   <th className="px-4 py-2.5 font-medium">Account</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
-                  <th className="px-4 py-2.5 font-medium"></th>
+                  <th className="px-4 py-2.5 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pg.pageItems.map((p) => (
-                  <tr key={p.id} className="border-b border-white/10 last:border-0 hover:bg-white/5 align-top">
-                    <td className="px-4 py-2.5">
-                      <p className="font-medium text-white/85">{p.play_type.replace(/_/g, ' ')}</p>
-                      <p className="text-xs text-white/40">{p.trigger_type.replace('account.', '')} · {p.execution_method.replace(/_/g, ' ')}</p>
+                  <tr key={p.id} className="border-b border-white/10 align-middle last:border-0 hover:bg-white/5">
+                    <td className="px-4 py-3">
+                      <p className="font-medium capitalize text-white/85">{p.play_type.replace(/_/g, ' ')}</p>
+                      <p className="mt-0.5 text-xs text-white/40">{p.trigger_type.replace('account.', '')} · {p.execution_method.replace(/_/g, ' ')}</p>
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-4 py-3">
                       <p className="text-white/80">{p.account_name ?? p.account_id.slice(0, 8)}</p>
-                      <p className="text-xs text-white/40">{p.tier ? `Tier ${p.tier}` : ''}</p>
+                      <p className="mt-0.5 text-xs text-white/40">{p.tier ? `Tier ${p.tier}` : ''}</p>
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-4 py-3">
                       <Pill tone={STATUS_TONE[p.status] ?? 'gray'}>{p.outcome ?? p.status}</Pill>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex flex-wrap justify-end gap-2 text-xs">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1.5">
                         {p.execution_method === 'crm_task_slack' && (
-                          <button onClick={() => openDraft(p.id)} className="rounded-md border border-accent/40 px-2 py-0.5 text-accent hover:bg-accent-soft transition">Draft</button>
+                          <button onClick={() => openDraft(p.id)} className={`rounded-md border px-2.5 py-1 text-xs font-medium whitespace-nowrap transition ${draftFor === p.id ? 'border-accent/60 bg-accent-soft text-accent' : 'border-accent/40 text-accent hover:bg-accent-soft'}`}>✎ Draft</button>
                         )}
-                        <button onClick={() => outcome(p.id, 'contacted')} className="rounded-md border border-white/10 px-2 py-0.5 text-white/50 hover:bg-white/10 transition">Contacted</button>
-                        <button onClick={() => outcome(p.id, 'not_interested')} className="rounded-md border border-white/10 px-2 py-0.5 text-white/50 hover:bg-white/10 transition">Not interested</button>
-                        <button onClick={() => snooze(p.id)} className="rounded-md border border-white/10 px-2 py-0.5 text-white/50 hover:bg-white/10 transition">Snooze</button>
+                        <span className="mx-0.5 h-4 w-px bg-white/10" aria-hidden />
+                        <button onClick={() => outcome(p.id, 'contacted')} className={actionBtn(p.outcome === 'contacted')}>Contacted</button>
+                        <button onClick={() => outcome(p.id, 'not_interested')} className={actionBtn(p.outcome === 'not_interested')}>Not interested</button>
+                        <button onClick={() => snooze(p.id)} className={actionBtn(p.status === 'snoozed')}>Snooze</button>
                       </div>
                     </td>
                   </tr>
