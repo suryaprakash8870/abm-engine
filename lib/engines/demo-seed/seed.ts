@@ -252,13 +252,14 @@ const DEMO_ICP = {
   criteria_confidence: { firmographics: 0.86, technographics: 0.8, signals: 0.78, exclusions: 0.84 },
 };
 
+// Keys MUST match the scoring engine's evaluators (industry_fit / company_size /
+// tech_stack / buying_signals) so adjusting weights actually re-tiers accounts.
+// Any other key falls back to a flat qualified-proxy and makes scoring weight-blind.
 const ICP_CRITERIA = [
-  { key: 'industry_match',     label: 'Industry match',                weight: 0.25, rationale: 'Core ICP industries: Cybersecurity, Cloud Infrastructure, IT, Software.' },
-  { key: 'headcount_band',     label: 'Headcount in 500-5000 band',    weight: 0.20, rationale: 'Below 500 lacks budget; above 5000 is enterprise/different motion.' },
-  { key: 'hubspot_present',    label: 'HubSpot in tech stack',         weight: 0.20, rationale: 'Integration with our platform requires HubSpot.' },
-  { key: 'funding_stage',      label: 'Series B+ or public',           weight: 0.15, rationale: 'Funding signals budget readiness.' },
-  { key: 'modern_data_stack',  label: 'Snowflake / Looker / Datadog',  weight: 0.10, rationale: 'Indicates data maturity our product augments.' },
-  { key: 'geography',          label: 'Core geographies',              weight: 0.10, rationale: 'Where our sales motion + support cover.' },
+  { key: 'industry_fit',   label: 'Industry fit',            weight: 0.30, rationale: 'Core ICP industries: Cybersecurity, Cloud Infrastructure, IT, Software.' },
+  { key: 'company_size',   label: 'Company size (500–5000)', weight: 0.25, rationale: 'Below 500 lacks budget; above 5000 is a different motion.' },
+  { key: 'tech_stack',     label: 'Tech stack match',        weight: 0.25, rationale: 'HubSpot required; Snowflake / Datadog / AWS preferred.' },
+  { key: 'buying_signals', label: 'Buying signals',          weight: 0.20, rationale: 'Qualification + intent proxy until signal data lands.' },
 ];
 
 const TIER_BOUNDARIES = { tier1_min: 75, tier2_min: 50, tier3_min: 25 };

@@ -48,25 +48,33 @@ export default function ScoringPage() {
     setSaved(false);
   };
 
-  const saveFormula = async () => {
-    if (!formula) return;
+  // Persist the current weights. Returns true on success so Run can save-then-run.
+  const saveFormula = async (): Promise<boolean> => {
+    if (!formula) return false;
     setSaving(true);
     setError(null);
     const total = formula.criteria.reduce((s, c) => s + c.weight, 0);
     if (Math.abs(total - 1) > 0.01) {
       setError(`Weights must sum to 1.0 (currently ${total.toFixed(2)}).`);
       setSaving(false);
-      return;
+      return false;
     }
     const res = await updateFormula(formula.id, { criteria: formula.criteria });
-    if (res.ok && res.data) { setFormula(res.data); setSaved(true); }
-    else setError(res.error?.message ?? 'Save failed.');
+    if (res.ok && res.data) { setFormula(res.data); setSaved(true); setSaving(false); return true; }
+    setError(res.error?.message ?? 'Save failed.');
     setSaving(false);
+    return false;
   };
 
   const handleRunScoring = async () => {
     setRunning(true);
     setError(null);
+    // Apply unsaved slider changes first — otherwise scoring re-runs on the old
+    // weights and the tier distribution never moves.
+    if (!saved) {
+      const ok = await saveFormula();
+      if (!ok) { setRunning(false); return; }
+    }
     const res = await runScoring();
     if (!res.ok) setError(res.error?.message ?? 'Failed to enqueue scoring job.');
     else setTimeout(() => { void getDistribution().then((d) => { if (d.ok && d.data) setDist(d.data); }); }, 3000);
