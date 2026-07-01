@@ -286,13 +286,17 @@ function headcountBuckets(min: number, max: number): string[] {
   return HEADCOUNT_BUCKETS.filter(([lo, hi]) => hi >= min && lo <= max).map(([, , b]) => b);
 }
 
-// Prospeo's tech industries collapse into a couple of broad company_industry
-// values; include both for any software / IT / security / cloud ICP.
+// Map ICP industries → Prospeo company_industry values. Default to product/software
+// companies (best contact coverage); only add IT services/consulting when the ICP
+// actually targets it — those firms (staffing/consulting) often have sparse contacts.
 function mapIndustries(icpIndustries: string[]): string[] {
   const t = icpIndustries.join(' ').toLowerCase();
   const out: string[] = [];
-  if (/soft|saas|cyber|secur|cloud|tech|internet|data|platform|develop|it\b|information/.test(t) || icpIndustries.length === 0) {
-    out.push('Software Development', 'IT Services and IT Consulting');
+  if (/soft|saas|cyber|secur|cloud|tech|internet|data|platform|develop|product|\bit\b|information/.test(t) || icpIndustries.length === 0) {
+    out.push('Software Development');
+  }
+  if (/service|consult|staffing|agency|outsourc/.test(t)) {
+    out.push('IT Services and IT Consulting');
   }
   return out.length ? out : ['Software Development'];
 }

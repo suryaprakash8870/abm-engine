@@ -59,7 +59,8 @@ export default function ContactsPage() {
 
   if (loading) return <p className="text-sm text-white/40">Loading accounts…</p>;
 
-  const tier1 = accounts.filter((a) => a.tier === 1);
+  // Batch-sources the top-N Tier-1/2 accounts by score (both tiers are sourceable).
+  const sourceable = accounts.length;
 
   return (
     <div className="space-y-6">
@@ -72,10 +73,10 @@ export default function ContactsPage() {
           <span className="hidden text-xs text-white/35 sm:inline">Sources the top {SOURCE_TOP_N} by score — keeps credit use in check</span>
           <button
             onClick={handleSourceBatch}
-            disabled={busy || tier1.length === 0}
+            disabled={busy || sourceable === 0}
             className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-[0_8px_24px_-12px_rgba(197,251,80,0.55)] hover:bg-accent-hover disabled:bg-white/10 disabled:text-white/30 disabled:shadow-none transition"
           >
-            {busy ? 'Working…' : `Source top ${Math.min(SOURCE_TOP_N, tier1.length)}${tier1.length > SOURCE_TOP_N ? ` of ${tier1.length}` : ''}`}
+            {busy ? 'Working…' : `Source top ${Math.min(SOURCE_TOP_N, sourceable)}${sourceable > SOURCE_TOP_N ? ` of ${sourceable}` : ''}`}
           </button>
         </div>
       </div>
