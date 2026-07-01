@@ -11,10 +11,11 @@
  * client is dormant and the app behaves exactly as before (full rollback = remove
  * the env vars; no code change).
  *
- * CREDITS (real money): search = 1 credit/request (≤25 people, emails hidden);
- * enrich = 1 credit/verified email revealed. A hard in-process budget
- * (PROSPEO_CREDIT_BUDGET, default 100) caps spend so a stray "Source all Tier 1"
- * can't drain the account — once hit, calls throw and the caller falls back to mock.
+ * CREDITS: search = 1 credit/request (≤25 people, emails hidden); enrich = 1
+ * credit/verified email revealed. On the FREE plan (100 credits/month) you can't
+ * be billed — worst case the month's credits run out. A hard in-process budget
+ * (PROSPEO_CREDIT_BUDGET, default 40) caps a single session so a stray "Source all
+ * Tier 1" can't drain the month — once hit, calls throw and the caller uses mock.
  *
  * @see https://prospeo.io/api-docs/search-person · /api-docs/enrich-person
  */
@@ -39,8 +40,10 @@ export class ProspeoApiError extends Error {
 
 let creditsUsed = 0;
 function budget(): number {
+  // Conservative default for a 100-credit/month free plan: cap one session at 40
+  // (~10 accounts) so a stray "Source all" leaves most of the month in reserve.
   const n = Number(process.env.PROSPEO_CREDIT_BUDGET);
-  return Number.isFinite(n) && n > 0 ? n : 100;
+  return Number.isFinite(n) && n > 0 ? n : 40;
 }
 /** Reserve `n` credits or throw so the caller degrades to mock instead of overspending. */
 function reserve(n: number): void {

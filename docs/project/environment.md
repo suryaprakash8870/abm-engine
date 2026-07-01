@@ -41,7 +41,8 @@ RB2B_API_KEY=
 # Prospeo — contact sourcing + email reveal (Apollo alternative, Engine 06).
 # Enable by setting BOTH: CONTACT_SOURCE=prospeo and PROSPEO_API_KEY.
 # Unset either → contacts use Apollo/mock exactly as before (full rollback).
-# PROSPEO_CREDIT_BUDGET caps real credit spend per worker process (default 100).
+# Free plan = 100 credits/month (can't be billed; just runs out).
+# PROSPEO_CREDIT_BUDGET caps spend per worker process (default 40 ≈ 10 accounts).
 PROSPEO_API_KEY=
 CONTACT_SOURCE=
 PROSPEO_CREDIT_BUDGET=
