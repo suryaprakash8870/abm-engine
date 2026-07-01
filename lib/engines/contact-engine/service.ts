@@ -187,6 +187,16 @@ export async function sourceAccountCommittee(
     // CRM-sync requests + job). Idempotent on retry: per-contact verification/sync
     // rows are replaced, not appended; a partial failure rolls the whole run back.
     const rows = await prisma.$transaction(async (tx) => {
+      // Clean replace: drop this account's prior contacts (incl. any mock
+      // fallbacks from a budget-capped earlier source) so re-sourcing never mixes
+      // stale and fresh people — the newest source is authoritative.
+      const prior = await tx.contact.findMany({ where: { workspaceId, accountId }, select: { id: true } });
+      const priorIds = prior.map((c) => c.id);
+      if (priorIds.length) {
+        await tx.emailVerificationResult.deleteMany({ where: { workspaceId, contactId: { in: priorIds } } });
+        await tx.contactCrmSyncLog.deleteMany({ where: { workspaceId, contactId: { in: priorIds } } });
+        await tx.contact.deleteMany({ where: { workspaceId, accountId } });
+      }
       const out: SourcedContactRow[] = [];
       for (const item of prepared) {
         const { p } = item;
