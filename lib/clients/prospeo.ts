@@ -238,3 +238,46 @@ export async function verifyEmail(email: string | null): Promise<EmailVerifyResu
   if (!email) return { status: 'invalid', bounceRisk: 1 };
   return { status: 'valid', bounceRisk: 0.05 };
 }
+
+// ── Company enrichment (real firmographics for scoring) ──────────────────────
+
+export interface ProspeoCompanyData {
+  name: string | null;
+  industry: string | null;
+  headcount: number | null;
+  revenue: string | null;
+  geography: string | null;
+  fundingStage: string;
+  techStack: string[];
+}
+
+function extractTech(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((t) => (typeof t === 'string' ? t : (str((t as Record<string, unknown>).name) ?? str((t as Record<string, unknown>).technology) ?? str((t as Record<string, unknown>).value))))
+    .filter((s): s is string => !!s)
+    .slice(0, 25);
+}
+
+/** Real firmographics + technographics for one company (1 credit; free re-enrich in 90d). */
+export async function enrichCompany(domain: string): Promise<ProspeoCompanyData | null> {
+  reserve(1);
+  try {
+    const json = await post('/enrich-company', { data: { company_website: domain } });
+    const c = (json.company ?? null) as Record<string, unknown> | null;
+    if (!c) return null;
+    const type = (str(c.type) ?? '').toLowerCase();
+    return {
+      name: str(c.name),
+      industry: str(c.industry),
+      headcount: typeof c.employee_count === 'number' ? c.employee_count : null,
+      revenue: str(c.revenue_range_printed) ?? str(c.revenue_range),
+      geography: str((c.location as Record<string, unknown> | null)?.country),
+      fundingStage: type.includes('public') ? 'public' : 'private',
+      techStack: extractTech(c.technology),
+    };
+  } catch (e) {
+    if (e instanceof ProspeoBudgetError) throw e;
+    return null;
+  }
+}
