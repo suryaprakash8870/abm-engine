@@ -52,13 +52,19 @@ function budget(): number {
   const n = Number(process.env.PROSPEO_CREDIT_BUDGET);
   return Number.isFinite(n) && n > 0 ? n : 40;
 }
-/** Reserve `n` credits or throw so the caller degrades to mock instead of overspending. */
+/** Reserve `n` credits up-front (used for searches, which bill on any match). */
 function reserve(n: number): void {
   if (creditsUsed + n > budget()) {
-    throw new ProspeoBudgetError(`Prospeo credit budget reached (${creditsUsed}/${budget()}) — falling back to mock.`);
+    throw new ProspeoBudgetError(`Prospeo credit budget reached (${creditsUsed}/${budget()}).`);
   }
   creditsUsed += n;
 }
+/** Throw if already at the cap — for calls we only charge for on success (enrich). */
+function checkBudget(): void {
+  if (creditsUsed >= budget()) throw new ProspeoBudgetError(`Prospeo credit budget reached (${creditsUsed}/${budget()}).`);
+}
+/** Count an ACTUAL charge — Prospeo bills per email/record found, not per attempt. */
+function spend(n = 1): void { creditsUsed += n; }
 /** Credits spent this process — surfaced by the test script + health. */
 export function prospeoCreditsUsed(): number { return creditsUsed; }
 
@@ -119,12 +125,14 @@ async function enrichEmail(idn: { id: string | null; linkedin: string | null }):
   else if (idn.id) data.person_id = idn.id;
   else return { email: null, company: null };
 
-  reserve(1); // budget guard (throws ProspeoBudgetError → caller degrades to mock)
+  checkBudget(); // stop at the cap; charge only when an email is actually revealed
   try {
     const json = await post('/enrich-person', { only_verified_email: true, data });
     const person = (json.person ?? null) as Record<string, unknown> | null;
     const emailObj = (person?.email ?? null) as Record<string, unknown> | null;
-    return { email: str(emailObj?.email), company: (json.company ?? null) as Record<string, unknown> | null };
+    const email = str(emailObj?.email);
+    if (email) spend(1);
+    return { email, company: (json.company ?? null) as Record<string, unknown> | null };
   } catch (e) {
     if (e instanceof ProspeoBudgetError) throw e;
     return { email: null, company: null };
@@ -345,11 +353,12 @@ export async function searchCompanies(params: ApolloSearchParams, page: number, 
 
 /** Real firmographics + technographics for one company (1 credit; free re-enrich in 90d). */
 export async function enrichCompany(domain: string): Promise<ProspeoCompanyData | null> {
-  reserve(1);
+  checkBudget();
   try {
     const json = await post('/enrich-company', { data: { company_website: domain } });
     const c = (json.company ?? null) as Record<string, unknown> | null;
     if (!c) return null;
+    spend(1); // charged on a match
     const type = (str(c.type) ?? '').toLowerCase();
     return {
       name: str(c.name),

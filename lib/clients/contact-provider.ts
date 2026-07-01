@@ -32,7 +32,11 @@ export async function searchPeople(
     try {
       return await prospeo.searchPeople(domain, companyName, titles, limit);
     } catch (e) {
-      warn(`Prospeo searchPeople failed (${String(e)}) — falling back to Apollo/mock.`);
+      // Real mode: NEVER fabricate mock contacts. A Prospeo error / budget cap /
+      // no-data means "none available", so return empty (honest) rather than fake
+      // people that look real in the UI.
+      warn(`Prospeo searchPeople failed (${String(e)}) — returning no contacts (real mode, no mock fallback).`);
+      return [];
     }
   }
   return apollo.searchPeople(domain, companyName, titles, limit);
