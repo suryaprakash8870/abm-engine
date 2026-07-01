@@ -70,7 +70,7 @@ export function prospeoCreditsUsed(): number { return creditsUsed; }
 
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 
-async function post(path: string, body: unknown): Promise<Record<string, unknown>> {
+async function post(path: string, body: unknown, attempt = 0): Promise<Record<string, unknown>> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 20_000);
   try {
@@ -82,6 +82,12 @@ async function post(path: string, body: unknown): Promise<Record<string, unknown
     });
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (DEBUG) console.log(JSON.stringify({ level: 'debug', component: 'prospeo', path, status: res.status, error_code: json.error_code ?? null }));
+    // Transient rate limit → back off and retry rather than failing to mock.
+    if (res.status === 429 && attempt < 5) {
+      clearTimeout(timer);
+      await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
+      return post(path, body, attempt + 1);
+    }
     if (!res.ok || json.error === true) {
       throw new ProspeoApiError(`Prospeo ${path} ${res.status}: ${String(json.error_code ?? JSON.stringify(json).slice(0, 200))}`);
     }
