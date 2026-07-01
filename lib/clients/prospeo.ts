@@ -11,16 +11,23 @@
  * client is dormant and the app behaves exactly as before (full rollback = remove
  * the env vars; no code change).
  *
- * CREDITS: search = 1 credit/request (≤25 people, emails hidden); enrich = 1
- * credit/verified email revealed. On the FREE plan (100 credits/month) you can't
- * be billed — worst case the month's credits run out. A hard in-process budget
- * (PROSPEO_CREDIT_BUDGET, default 40) caps a single session so a stray "Source all
- * Tier 1" can't drain the month — once hit, calls throw and the caller uses mock.
+ * APPROACH (credit-efficient): per account we do ONE company search (1 credit,
+ * returns up to 25 real people with titles), classify them into the buying
+ * committee locally, then enrich only a few to reveal verified emails (1 credit
+ * each). The result is cached per domain, so the Contact Engine's three per-role
+ * calls share it (0 extra credits). ~1 + a few credits per account.
+ *
+ * CREDITS: on the FREE plan (100/month) you can't be billed — worst case the
+ * month's credits run out. A hard in-process budget (PROSPEO_CREDIT_BUDGET,
+ * default 40) caps a single session; once hit, calls throw and the caller degrades
+ * to mock.
  *
  * @see https://prospeo.io/api-docs/search-person · /api-docs/enrich-person
  */
 
 import type { ApolloPerson, EmailVerifyResult } from './apollo';
+
+type Role = 'decision_maker' | 'champion' | 'influencer';
 
 const BASE = 'https://api.prospeo.io';
 const DEBUG = process.env.PROSPEO_DEBUG === '1';
@@ -41,7 +48,7 @@ export class ProspeoApiError extends Error {
 let creditsUsed = 0;
 function budget(): number {
   // Conservative default for a 100-credit/month free plan: cap one session at 40
-  // (~10 accounts) so a stray "Source all" leaves most of the month in reserve.
+  // (~6-8 accounts) so a stray "Source all" leaves most of the month in reserve.
   const n = Number(process.env.PROSPEO_CREDIT_BUDGET);
   return Number.isFinite(n) && n > 0 ? n : 40;
 }
@@ -68,9 +75,9 @@ async function post(path: string, body: unknown): Promise<Record<string, unknown
       signal: ctrl.signal,
     });
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (DEBUG) console.log(JSON.stringify({ level: 'debug', component: 'prospeo', path, status: res.status, body: json }));
+    if (DEBUG) console.log(JSON.stringify({ level: 'debug', component: 'prospeo', path, status: res.status, error_code: json.error_code ?? null }));
     if (!res.ok || json.error === true) {
-      throw new ProspeoApiError(`Prospeo ${path} ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
+      throw new ProspeoApiError(`Prospeo ${path} ${res.status}: ${String(json.error_code ?? JSON.stringify(json).slice(0, 200))}`);
     }
     return json;
   } finally {
@@ -78,109 +85,154 @@ async function post(path: string, body: unknown): Promise<Record<string, unknown
   }
 }
 
-// ── Defensive response parsing (shapes vary slightly by plan/version) ─────────
+// ── Response parsing (defensive — shapes vary by plan/version) ────────────────
+
+const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
 /** Pull the array of matched people out of a /search-person response. */
 function extractPeople(json: Record<string, unknown>): Array<Record<string, unknown>> {
   const r = (json.response ?? json) as Record<string, unknown>;
-  const candidate = (r.people ?? r.results ?? r.data ?? (json as Record<string, unknown>).results) as unknown;
-  if (Array.isArray(candidate)) {
-    // Each item may be the person directly or wrap it under `person`.
-    return candidate.map((it) => {
-      const o = it as Record<string, unknown>;
-      return (o.person ?? o) as Record<string, unknown>;
-    });
-  }
-  return [];
+  const candidate = (r.results ?? r.people ?? r.data ?? json.results) as unknown;
+  if (!Array.isArray(candidate)) return [];
+  return candidate.map((it) => {
+    const o = it as Record<string, unknown>;
+    return (o.person ?? o) as Record<string, unknown>;
+  });
 }
-
-const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
 function personIdentity(p: Record<string, unknown>): { id: string | null; linkedin: string | null; name: string | null; title: string | null } {
   return {
     id: str(p.person_id) ?? str(p.id),
     linkedin: str(p.linkedin_url) ?? str(p.linkedin),
     name: str(p.full_name) ?? str(p.name),
-    title: str(p.job_title) ?? str(p.title),
+    // Prospeo search results carry the title as `current_job_title`.
+    title: str(p.current_job_title) ?? str(p.job_title) ?? str(p.title),
   };
 }
 
-/** Reveal a verified email for one identity via /enrich-person (1 credit if found). */
-async function enrichEmail(identity: { id: string | null; linkedin: string | null; name: string | null }): Promise<{ email: string | null; company: Record<string, unknown> | null; person: Record<string, unknown> | null }> {
+/** Reveal a verified email for one person via /enrich-person (1 credit if found).
+ *  LinkedIn URL is the most reliable identifier; person_id is the fallback. Skips
+ *  (returns null email) on an API error so one bad record can't fail the account. */
+async function enrichEmail(idn: { id: string | null; linkedin: string | null }): Promise<{ email: string | null; company: Record<string, unknown> | null }> {
   const data: Record<string, unknown> = {};
-  if (identity.id) data.person_id = identity.id;
-  else if (identity.linkedin) data.linkedin_url = identity.linkedin;
-  else return { email: null, company: null, person: null };
+  if (idn.linkedin) data.linkedin_url = idn.linkedin;
+  else if (idn.id) data.person_id = idn.id;
+  else return { email: null, company: null };
 
-  reserve(1); // enrich bills 1 credit per email found (no charge if none — best-effort)
-  const json = await post('/enrich-person', { only_verified_email: true, data });
-  const person = (json.person ?? null) as Record<string, unknown> | null;
-  const emailObj = (person?.email ?? null) as Record<string, unknown> | null;
-  const email = str(emailObj?.email);
-  return { email, company: (json.company ?? null) as Record<string, unknown> | null, person };
+  reserve(1); // budget guard (throws ProspeoBudgetError → caller degrades to mock)
+  try {
+    const json = await post('/enrich-person', { only_verified_email: true, data });
+    const person = (json.person ?? null) as Record<string, unknown> | null;
+    const emailObj = (person?.email ?? null) as Record<string, unknown> | null;
+    return { email: str(emailObj?.email), company: (json.company ?? null) as Record<string, unknown> | null };
+  } catch (e) {
+    if (e instanceof ProspeoBudgetError) throw e;
+    return { email: null, company: null };
+  }
 }
 
-// ── Public API (Apollo-compatible) ───────────────────────────────────────────
+// ── Local classifiers (kept here to avoid a client→engine layer inversion) ────
 
-const seniorityOf = (title: string): string | null => {
+function roleOf(title: string): Role {
+  const t = title.toLowerCase();
+  if (/\b(ceo|cto|cfo|cmo|cio|coo|svp|evp|vp)\b|chief|vice president|head of|founder|owner|president/.test(t)) return 'decision_maker';
+  if (/director|senior manager/.test(t)) return 'champion';
+  return 'influencer';
+}
+function seniorityOf(title: string): string | null {
   const t = title.toLowerCase();
   if (/\b(ceo|cto|cfo|cmo|cio|coo)\b|chief|founder/.test(t)) return 'c_suite';
   if (/\bvp\b|vice president|head of/.test(t)) return 'vp';
   if (/director/.test(t)) return 'director';
   if (/manager|lead/.test(t)) return 'manager';
   return null;
-};
+}
+
+// ── Per-domain committee (built once, shared across the 3 per-role calls) ─────
+
+interface CommitteeMember extends ApolloPerson { role: Role }
+const committeeCache = new Map<string, CommitteeMember[]>();
+
+function maxPerRole(): number {
+  const n = Number(process.env.PROSPEO_MAX_PER_ROLE);
+  return Number.isFinite(n) && n > 0 ? n : 2;
+}
+
+/** One company search → classify → enrich a balanced few → the buying committee. */
+async function buildCommittee(domain: string): Promise<CommitteeMember[]> {
+  reserve(1); // search bills 1 credit per request returning ≥1 person
+  let search: Record<string, unknown>;
+  try {
+    search = await post('/search-person', {
+      page: 1,
+      filters: { company: { websites: { include: [domain] } } },
+    });
+  } catch (e) {
+    if (e instanceof ProspeoApiError && /NO_RESULTS/.test(e.message)) return [];
+    throw e;
+  }
+
+  // Classify everyone by their real title, keep a balanced set to cap enrichment.
+  const cap = maxPerRole();
+  const buckets: Record<Role, Array<{ idn: ReturnType<typeof personIdentity>; title: string }>> = {
+    decision_maker: [], champion: [], influencer: [],
+  };
+  for (const p of extractPeople(search)) {
+    const idn = personIdentity(p);
+    if (!idn.linkedin && !idn.id) continue;
+    const title = idn.title ?? '';
+    const role = roleOf(title);
+    if (buckets[role].length < cap) buckets[role].push({ idn, title });
+  }
+
+  // Enrich only the picked committee to reveal verified emails.
+  const out: CommitteeMember[] = [];
+  for (const role of ['decision_maker', 'champion', 'influencer'] as const) {
+    for (const { idn, title } of buckets[role]) {
+      const { email, company } = await enrichEmail(idn);
+      if (!email) continue;
+      out.push({
+        apolloId: idn.id ?? `prospeo_${email}`,
+        fullName: idn.name ?? email.split('@')[0],
+        title,
+        seniority: seniorityOf(title),
+        department: str((company as Record<string, unknown> | null)?.industry),
+        linkedinUrl: idn.linkedin,
+        email,
+        role,
+      });
+    }
+  }
+  return out;
+}
+
+// ── Public API (Apollo-compatible) ───────────────────────────────────────────
 
 /**
- * Find people at a company by title and reveal their verified emails.
- * search-person (1 credit) → enrich-person per result (1 credit/email). Returns
- * only people whose verified email was revealed. Throws on API/budget error so
- * the provider shim falls back to Apollo/mock.
+ * Return the committee members matching the role these titles represent. The
+ * heavy lifting (search + enrich) happens once per domain and is cached, so the
+ * Contact Engine's three per-role calls only spend credits on the first.
  */
 export async function searchPeople(
   domain: string,
-  companyName: string,
+  _companyName: string,
   titles: string[],
   limit: number,
 ): Promise<ApolloPerson[]> {
   if (titles.length === 0 || limit <= 0) return [];
-
-  reserve(1); // search bills 1 credit per request returning ≥1 person
-  const search = await post('/search-person', {
-    page: 1,
-    // NOTE: verify these filter keys against your account on the first live run
-    // (see scripts/prospeo-test.ts) — adjust here if the API rejects them.
-    filters: {
-      company_website: [domain],
-      person_job_title: { include: titles },
-    },
-  });
-
-  const people = extractPeople(search).slice(0, limit);
-  const out: ApolloPerson[] = [];
-  for (const raw of people) {
-    const idn = personIdentity(raw);
-    const { email, company } = await enrichEmail(idn);
-    if (!email) continue; // no verified email → skip (can't push/verify)
-    const title = idn.title ?? '';
-    out.push({
-      apolloId: idn.id ?? `prospeo_${email}`,
-      fullName: idn.name ?? email.split('@')[0],
-      title,
-      seniority: seniorityOf(title),
-      department: str((company as Record<string, unknown> | null)?.industry) ?? null,
-      linkedinUrl: idn.linkedin,
-      email,
-    });
-  }
-  return out;
+  if (!committeeCache.has(domain)) committeeCache.set(domain, await buildCommittee(domain));
+  const committee = committeeCache.get(domain) ?? [];
+  const wantRole = roleOf(titles[0]); // which role this call is sourcing
+  return committee
+    .filter((p) => p.role === wantRole)
+    .slice(0, limit)
+    .map(({ role, ...rest }) => { void role; return rest; });
 }
 
 /**
  * Verify an email. Prospeo reveals only VERIFIED emails during enrichment
  * (only_verified_email:true), so an address that came from searchPeople is already
- * deliverable — we mark it valid without spending another credit. (Arbitrary
- * user-typed emails aren't re-checked in Prospeo mode; that's an Apollo/mock job.)
+ * deliverable — we mark it valid without spending another credit.
  */
 export async function verifyEmail(email: string | null): Promise<EmailVerifyResult> {
   if (!email) return { status: 'invalid', bounceRisk: 1 };
