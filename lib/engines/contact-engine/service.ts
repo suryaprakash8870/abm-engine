@@ -20,7 +20,7 @@
  */
 
 import { prisma } from '../../db/client';
-import { searchPeople, verifyEmail, type ApolloPerson } from '../../clients/apollo';
+import { searchPeople, verifyEmail, type ApolloPerson } from '../../clients/contact-provider';
 import type { AccountId, Tier } from '../../events';
 
 export type StakeholderRole = 'decision_maker' | 'champion' | 'influencer';

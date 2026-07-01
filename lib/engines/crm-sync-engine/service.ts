@@ -113,13 +113,17 @@ export async function writeRecords(
   const { id: syncJobId } = await findOrCreateSyncJob(workspaceId, syncType, correlationId, records.length);
   const accessToken = await resolveAccessToken(workspaceId, crmType);
   const adapter = getCrmAdapter(accessToken);
+  // Only the live HubSpot adapter makes network calls that need throttling. The
+  // mock is in-memory, so rate-limiting it just adds ~1s of artificial delay per
+  // 3 records (≈50s for a full TAL) with no benefit — skip it.
+  const throttle = adapter.kind === 'hubspot';
 
   let recordsSynced = 0;
   let errors = 0;
 
   for (const batch of batchByType(records)) {
     for (const record of batch) {
-      await acquireRateLimitToken(workspaceId);
+      if (throttle) await acquireRateLimitToken(workspaceId);
       let outcome: 'success' | 'dead_lettered' = 'success';
       let response: Record<string, unknown>;
       try {
@@ -175,8 +179,12 @@ export interface CrmSyncSummary {
  * Live when a CRM connection or HUBSPOT_SERVICE_KEY is present, else mock.
  */
 export async function syncTalToCrm(workspaceId: string, correlationId: string): Promise<CrmSyncSummary> {
+  // Live only when the workspace has a real OAuth connection, or ops opted in with
+  // CRM_PUSH_LIVE=true + a service key (see getCrmAdapter). Otherwise the push runs
+  // against the in-memory mock: instant, and never writes to a real HubSpot portal.
   const token = await resolveAccessToken(workspaceId, 'hubspot');
-  const mode: 'live' | 'mock' = token || process.env.HUBSPOT_SERVICE_KEY ? 'live' : 'mock';
+  const live = !!token || (process.env.CRM_PUSH_LIVE === 'true' && !!process.env.HUBSPOT_SERVICE_KEY);
+  const mode: 'live' | 'mock' = live ? 'live' : 'mock';
 
   const accountRecords = await recordsForTalFinalized(workspaceId);
   const contactIds = (await prisma.contact.findMany({ where: { workspaceId }, select: { id: true } })).map((c) => c.id);

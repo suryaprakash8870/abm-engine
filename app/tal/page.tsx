@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Card, Pill, Banner, LinkButton, WhatsNext } from '@/app/icp/ui';
+import { Card, Pill, Banner, LinkButton, WhatsNext, Modal } from '@/app/icp/ui';
 import { usePagination, Pagination } from '@/lib/web/pagination';
 import { getTal, finalizeTal, suppressAccount, type CurrentTal } from '@/lib/web/tal-api';
 import { syncToCrm } from '@/lib/web/crm-api';
@@ -23,7 +23,7 @@ export default function TalPage() {
     const res = await syncToCrm();
     if (res.ok && res.data) {
       const s = res.data;
-      setNotice(`Pushed to HubSpot (${s.mode}) · ${s.accounts} accounts · ${s.contacts} contacts · ${s.synced} synced${s.errors ? ` · ${s.errors} errors` : ''}.`);
+      setNotice(`Pushed to HubSpot · ${s.accounts} accounts · ${s.contacts} contacts · ${s.synced} synced${s.errors ? ` · ${s.errors} errors` : ''}.`);
     } else setError(res.error?.message ?? 'Push to HubSpot failed.');
     setSyncing(false);
   };
@@ -109,9 +109,10 @@ export default function TalPage() {
       )}
       {error && <Banner tone="red">{error}</Banner>}
 
-      {/* Suppression modal */}
-      {suppressTarget && (
-        <Card className="space-y-4 border-amber-400/25 bg-amber-500/10">
+      {/* Suppression popup — centered dialog so it opens in place, not above the table */}
+      <Modal open={!!suppressTarget} onClose={() => { if (!busy) setSuppressTarget(null); }}>
+        {suppressTarget && (
+        <Card className="space-y-4 border-amber-400/25 bg-[#15171d]">
           <p className="text-sm font-medium text-amber-200">
             Suppress <span className="text-white">{suppressTarget.name ?? suppressTarget.domain ?? suppressTarget.id.slice(0, 8)}</span> from the TAL
           </p>
@@ -133,7 +134,8 @@ export default function TalPage() {
             <button onClick={() => setSuppressTarget(null)} className="text-sm text-white/40 hover:text-white transition">Cancel</button>
           </div>
         </Card>
-      )}
+        )}
+      </Modal>
 
       {!tal || tal.accounts.length === 0 ? (
         <Banner tone="blue">No TAL yet. Score some accounts (Engine 04), then click <strong>Finalize TAL</strong> to build the list.</Banner>

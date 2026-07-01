@@ -9,6 +9,7 @@
 
 import { Sidebar } from './sidebar';
 import { TourBanner } from '../tour/TourBanner';
+import { BackBar } from './back-bar';
 
 /**
  * Fixed, full-viewport dark canvas with multiple breathing lime glows + grain.
@@ -53,18 +54,20 @@ export function GlowBackground() {
 
 /**
  * Full page shell: glow + left sidebar + centered main + tour overlay.
- * `crumb` is accepted for back-compat (every section layout passes it) but is no
- * longer rendered as a header — the sidebar's active state shows location now.
+ * `crumb` (e.g. "05 · TAL") labels the current location next to the global Back
+ * button at the top of the content — the sidebar's active state shows it too.
  */
 export function AppShell({ crumb, children }: { crumb?: string; children: React.ReactNode }) {
-  void crumb;
   return (
     <div className="relative min-h-screen text-white">
       <GlowBackground />
       <div className="lg:flex">
         <Sidebar />
         <div className="min-w-0 flex-1">
-          <main className="mx-auto max-w-4xl px-6 py-8 lg:py-10">{children}</main>
+          <main className="mx-auto max-w-4xl px-6 py-8 lg:py-10">
+            <BackBar crumb={crumb} />
+            {children}
+          </main>
         </div>
       </div>
       <TourBanner />

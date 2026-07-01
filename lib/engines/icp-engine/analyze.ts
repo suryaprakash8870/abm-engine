@@ -4,13 +4,19 @@
  * Turns a website URL or a freeform business description into a DRAFT set of the
  * 12 ICP-wizard answers, so the wizard can pre-fill instead of cold-asking. The
  * user reviews + edits the drafts before synthesis. This is the "paste your site,
- * AI fills it in" intake step (oppora-style onboarding).
+ * AI fills it in" intake step.
  *
- * FREE TESTING: with no ANTHROPIC_API_KEY (or ICP_LLM=mock) it returns a
- * deterministic draft so the flow works offline.
+ * When the input is a URL/domain we CRAWL the site (Firecrawl) and ground the
+ * draft in the page's real content — otherwise the LLM only sees the text you
+ * typed and guesses from it (e.g. a name like "kraftylumin" → "lumin" → lighting).
+ * No URL, or a failed/empty crawl → we fall back to inference from the input.
+ *
+ * FREE TESTING: with the LLM in mock mode (ICP_LLM=mock / no key) it returns a
+ * deterministic draft so the flow works offline. Firecrawl has its own mock mode.
  */
 
 import { llmProvider, llmStructured } from '../../clients/llm';
+import { scrape, type ScrapeResult } from '../../clients/firecrawl';
 import { WIZARD_QUESTIONS, type WizardAnswers } from './types';
 
 const TOOL_NAME = 'emit_wizard_answers';
@@ -24,13 +30,65 @@ const ANSWERS_SCHEMA: Record<string, unknown> = {
   ),
 };
 
-const SYSTEM =
+const SYSTEM_INFER =
   'You are a B2B go-to-market strategist. Given a company website URL or a ' +
   'freeform description of a business, infer concise, realistic DRAFT answers to ' +
   '12 questions used to build an Ideal Customer Profile. Keep each answer to one ' +
   'short phrase or sentence. If the input is only a URL, infer from the likely ' +
   'company. These are drafts the user will review and edit — be specific and ' +
   'plausible, do not over-claim, and never leave an answer blank.';
+
+const SYSTEM_FROM_SITE =
+  'You are a B2B go-to-market strategist. Below is real content scraped from a ' +
+  "company's own website. Infer concise, realistic DRAFT answers to 12 questions " +
+  'used to build an Ideal Customer Profile, GROUNDED in what the website actually ' +
+  'says. Base every answer on the provided content; only infer what the site does ' +
+  'not state, and never contradict it or invent products, industries, or services ' +
+  'it does not mention. Keep each answer to one short phrase or sentence, and never ' +
+  'leave one blank.';
+
+// qwen2.5:3b is slow on long inputs, and the interactive intake waits on this call.
+// The homepage's first few KB (hero + product blurbs) is where the "what/who" lives;
+// cap there so the draft stays grounded but the call returns in a reasonable time.
+const MAX_SITE_CHARS = 3200;
+
+/**
+ * Return the input as a crawlable URL only when the WHOLE input is a URL/domain
+ * (anchored) — not a prose description that merely mentions one, which would make
+ * us crawl an example domain from a sentence. A bare name with no TLD → null.
+ */
+function urlFromInput(input: string): string | null {
+  const trimmed = input.trim();
+  return /^(?:https?:\/\/)?(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]{2,})+(?:\/\S*)?$/i.test(trimmed)
+    ? trimmed
+    : null;
+}
+
+/** Scrape a URL, but never let a slow site block the interactive intake. */
+async function scrapeWithTimeout(url: string, ms = 12_000): Promise<ScrapeResult | null> {
+  try {
+    return await Promise.race([
+      scrape(url),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+/** Pack the scraped page into a compact context block for the LLM. */
+function siteContext(site: ScrapeResult): string {
+  return [
+    `Website: ${site.url}`,
+    site.title ? `Page title: ${site.title}` : '',
+    site.description ? `Meta description: ${site.description}` : '',
+    '',
+    'Website content (markdown):',
+    site.markdown.slice(0, MAX_SITE_CHARS),
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
 
 /** Deterministic offline draft so the intake works with no API key. */
 function mockAnswers(input: string): WizardAnswers {
@@ -55,14 +113,27 @@ function mockAnswers(input: string): WizardAnswers {
 export async function analyzeBusinessToAnswers(input: string): Promise<WizardAnswers> {
   if (llmProvider() === 'mock') return mockAnswers(input);
 
+  // If the input is a URL/domain, crawl the site and ground the draft in real
+  // content instead of guessing from the name.
+  let system = SYSTEM_INFER;
+  let user = `Business: ${input}`;
+  const url = urlFromInput(input);
+  if (url) {
+    const site = await scrapeWithTimeout(url);
+    if (site && site.markdown.trim().length > 80) {
+      system = SYSTEM_FROM_SITE;
+      user = siteContext(site);
+    }
+  }
+
   const raw = await llmStructured({
     toolName: TOOL_NAME,
     schema: ANSWERS_SCHEMA,
-    system: SYSTEM,
-    user: `Business: ${input}`,
+    system,
+    user,
     model: 'reasoning',
     maxTokens: 1500,
-    temperature: 0.5,
+    temperature: 0.4,
     description: 'Return a concise DRAFT answer for each of the 12 ICP-wizard questions.',
   });
 

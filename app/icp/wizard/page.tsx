@@ -235,7 +235,7 @@ export default function WizardPage() {
                 Tell us about your business, {name}.
               </h1>
               <p className="mt-4 text-[15px] text-white/45">
-                Paste your website or LinkedIn, or describe what you sell. AI drafts your ICP — you just refine it.
+                Paste your website URL — AI reads your site to draft your ICP. Or describe what you sell. You just refine it.
               </p>
 
               {/* Intake prompt pill */}

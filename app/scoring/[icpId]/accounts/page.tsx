@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Card, Pill, Banner, LinkButton } from '@/app/icp/ui';
+import { Card, Pill, Banner, LinkButton, Modal } from '@/app/icp/ui';
 import { usePagination, Pagination } from '@/lib/web/pagination';
 import { overrideTier } from '@/lib/web/scoring-api';
 
@@ -21,7 +21,7 @@ export default function ScoredAccountsPage() {
   const [accounts, setAccounts] = useState<ScoredRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [overrideTarget, setOverrideTarget] = useState<string | null>(null);
+  const [overrideTarget, setOverrideTarget] = useState<{ id: string; name: string | null; domain: string } | null>(null);
   const [overrideTierVal, setOverrideTierVal] = useState<1 | 2 | 3>(2);
   const [overrideReason, setOverrideReason] = useState('');
   const [overriding, setOverriding] = useState(false);
@@ -41,7 +41,7 @@ export default function ScoredAccountsPage() {
   const handleOverride = async () => {
     if (!overrideTarget || !overrideReason.trim()) return;
     setOverriding(true);
-    const res = await overrideTier(overrideTarget, overrideTierVal, overrideReason);
+    const res = await overrideTier(overrideTarget.id, overrideTierVal, overrideReason);
     if (res.ok) {
       setOverrideTarget(null);
       setOverrideReason('');
@@ -72,10 +72,14 @@ export default function ScoredAccountsPage() {
 
       {error && <Banner tone="red">{error}</Banner>}
 
-      {/* Override modal */}
-      {overrideTarget && (
-        <Card className="space-y-4 border-amber-400/25 bg-amber-500/10">
-          <p className="text-sm font-medium text-amber-200">Override tier for account <code className="rounded bg-white/10 px-1">{overrideTarget.slice(0, 8)}…</code></p>
+      {/* Override modal — centered popup so it opens in place, not above the table */}
+      <Modal open={!!overrideTarget} onClose={() => { if (!overriding) setOverrideTarget(null); }}>
+        {overrideTarget && (
+        <Card className="space-y-4 border-amber-400/25 bg-[#15171d]">
+          <p className="text-sm font-medium text-amber-200">
+            Override tier for <span className="text-white">{overrideTarget.name ?? overrideTarget.domain ?? overrideTarget.id.slice(0, 8)}</span>
+            {overrideTarget.domain && <span className="ml-1 text-white/40">· {overrideTarget.domain}</span>}
+          </p>
           <div className="flex items-center gap-3">
             {([1, 2, 3] as const).map((t) => (
               <button
@@ -101,7 +105,8 @@ export default function ScoredAccountsPage() {
             <button onClick={() => setOverrideTarget(null)} className="text-sm text-white/40 hover:text-white transition">Cancel</button>
           </div>
         </Card>
-      )}
+        )}
+      </Modal>
 
       {accounts.length === 0 ? (
         <Banner tone="blue">No scored accounts yet. Run scoring from the formula page.</Banner>
@@ -151,7 +156,7 @@ export default function ScoredAccountsPage() {
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <button
-                      onClick={() => { setOverrideTarget(a.id); setOverrideTierVal(a.tier === 1 ? 2 : 1); }}
+                      onClick={() => { setOverrideTarget({ id: a.id, name: a.name, domain: a.domain }); setOverrideTierVal(a.tier === 1 ? 2 : 1); }}
                       className="text-xs text-white/30 hover:text-white transition"
                     >
                       Override

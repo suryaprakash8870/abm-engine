@@ -4,14 +4,25 @@
 
 import type { ApiResult } from './icp-api';
 
-async function call<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
+async function call<T>(path: string, init?: RequestInit, timeoutMs?: number): Promise<ApiResult<T>> {
+  const ctrl = timeoutMs ? new AbortController() : undefined;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : undefined;
   try {
-    const res = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } });
+    const res = await fetch(path, { ...init, signal: ctrl?.signal, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } });
     const body = await res.json().catch(() => ({}));
     if (res.ok) return { ok: true, status: res.status, data: body.data as T };
     return { ok: false, status: res.status, error: body.error ?? { code: 'UNKNOWN', message: res.statusText } };
   } catch (e) {
-    return { ok: false, status: 0, error: { code: 'NETWORK', message: e instanceof Error ? e.message : 'network error' } };
+    const aborted = e instanceof DOMException && e.name === 'AbortError';
+    return {
+      ok: false,
+      status: 0,
+      error: aborted
+        ? { code: 'TIMEOUT', message: 'Request timed out — the sync is taking too long. Try again.' }
+        : { code: 'NETWORK', message: e instanceof Error ? e.message : 'network error' },
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -58,4 +69,4 @@ export interface CrmSyncSummary {
   mode: string; accounts: number; contacts: number; synced: number; errors: number;
 }
 export const syncToCrm = () =>
-  call<CrmSyncSummary>('/api/v1/crm/sync', { method: 'POST', body: '{}' });
+  call<CrmSyncSummary>('/api/v1/crm/sync', { method: 'POST', body: '{}' }, 60_000);

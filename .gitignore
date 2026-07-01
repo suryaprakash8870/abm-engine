@@ -45,3 +45,7 @@ packages/db/drizzle/meta
 
 # competitor reference screenshots — local only, not committed
 reference/
+
+# local demo/report artifacts — generated, not committed
+test-report/
+.playwright-mcp/

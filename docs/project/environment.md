@@ -38,6 +38,14 @@ CLEARBIT_API_KEY=
 BUILTWITH_API_KEY=
 RB2B_API_KEY=
 
+# Prospeo — contact sourcing + email reveal (Apollo alternative, Engine 06).
+# Enable by setting BOTH: CONTACT_SOURCE=prospeo and PROSPEO_API_KEY.
+# Unset either → contacts use Apollo/mock exactly as before (full rollback).
+# PROSPEO_CREDIT_BUDGET caps real credit spend per worker process (default 100).
+PROSPEO_API_KEY=
+CONTACT_SOURCE=
+PROSPEO_CREDIT_BUDGET=
+
 # HubSpot OAuth app
 HUBSPOT_CLIENT_ID=
 HUBSPOT_CLIENT_SECRET=

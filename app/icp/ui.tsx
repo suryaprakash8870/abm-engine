@@ -146,6 +146,36 @@ export function LinkButton({ href, children }: { href: string; children: React.R
   );
 }
 
+/**
+ * Centered modal dialog. Renders a dimmed, click-to-dismiss backdrop with the
+ * panel floating in the viewport centre — so row actions (suppress, override)
+ * open in place instead of shifting the page to a bar above the table.
+ * Hook-free: closing is driven by the backdrop click + the caller's Cancel button.
+ */
+export function Modal({
+  open,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function Banner({ tone = 'red', children }: { tone?: 'red' | 'amber' | 'blue'; children: React.ReactNode }) {
   const tones: Record<string, string> = {
     red: 'border-red-400/25 bg-red-500/10 text-red-200',

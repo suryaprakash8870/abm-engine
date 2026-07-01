@@ -89,11 +89,21 @@ export class HubspotAdapter implements CrmAdapter {
   constructor(private readonly token: string) {}
 
   private async hs(path: string, method: string, body?: unknown, attempt = 0): Promise<{ ok: boolean; status: number; json: Record<string, unknown> }> {
-    const res = await fetch(`${HS_BASE}${path}`, {
-      method,
-      headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    // Time-box every HubSpot call so a stalled socket fails fast (→ dead-lettered)
+    // instead of hanging the whole request indefinitely.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
+    let res: Response;
+    try {
+      res = await fetch(`${HS_BASE}${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     // HubSpot enforces a per-second rate cap; on 429 wait (honouring Retry-After)
     // and retry with exponential backoff instead of dead-lettering the record.
     if (res.status === 429 && attempt < 5) {
@@ -207,10 +217,16 @@ function assocIds(record: Record<string, unknown>, type: string): string[] {
   return (assoc[type]?.results ?? []).map((a) => String(a.id));
 }
 
-/** Resolve the adapter for a workspace. Uses the live HubSpot token when one is
- *  available (OAuth connection token, else the HUBSPOT_SERVICE_KEY private-app
- *  token from env); falls back to the deterministic mock when neither exists. */
+/** Resolve the adapter for a workspace.
+ *
+ *  Goes live in two cases: (1) a per-workspace OAuth `accessToken` — the user
+ *  explicitly connected their CRM; (2) the env `HUBSPOT_SERVICE_KEY` **and**
+ *  `CRM_PUSH_LIVE=true` — an ops opt-in. Otherwise returns the deterministic mock.
+ *
+ *  The `CRM_PUSH_LIVE` gate stops a demo on sample data from writing to a real
+ *  portal just because a service key happens to be present in the environment. */
 export function getCrmAdapter(accessToken: string | null): CrmAdapter {
-  const token = accessToken ?? process.env.HUBSPOT_SERVICE_KEY ?? null;
+  const envKey = process.env.CRM_PUSH_LIVE === 'true' ? process.env.HUBSPOT_SERVICE_KEY ?? null : null;
+  const token = accessToken ?? envKey;
   return token ? new HubspotAdapter(token) : new MockHubspotAdapter();
 }
