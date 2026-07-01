@@ -8,6 +8,7 @@
  */
 
 import { cachedFirmographics, enrichCompany as prospeoEnrichCompany } from './prospeo';
+import { pdlEnrichCompany, shouldUsePdl } from './pdl';
 
 export interface EnrichmentData {
   industry: string | null;
@@ -58,6 +59,12 @@ function useProspeoEnrich(): boolean {
 }
 
 export async function enrichCompany(domain: string, _name: string): Promise<EnrichmentData> {
+  // Prefer PDL — its own free-credit pool, real firmographics + tech tags — so it
+  // doesn't drain Prospeo. Misses (404 / budget cap) fall through.
+  if (shouldUsePdl()) {
+    const p = await pdlEnrichCompany(domain);
+    if (p) return { industry: p.industry, headcount: p.headcount, revenue: p.revenue, geography: p.geography, fundingStage: p.fundingStage, techStack: p.techStack, dataQualityScore: 0.95, sources: ['pdl'] };
+  }
   // Real firmographics via Prospeo: reuse what the TAM search already fetched for
   // this domain (free), else a live enrich-company. Falls back to mock otherwise.
   if (useProspeoEnrich()) {

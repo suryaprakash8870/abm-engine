@@ -19,6 +19,7 @@ import { Prisma } from '@prisma/client';
 import { resetDemoWorkspace } from '../lib/engines/demo-seed/seed';
 import { searchCompanies } from '../lib/clients/company-provider';
 import { cachedFirmographics, shouldUseProspeo, prospeoCreditsUsed, type ProspeoCompanyData } from '../lib/clients/prospeo';
+import { pdlEnrichCompany } from '../lib/clients/pdl';
 import { sourceAccountCommittee } from '../lib/engines/contact-engine/service';
 
 const ICP_INDUSTRIES = ['Cybersecurity', 'Cloud Infrastructure', 'Information Technology', 'Software'];
@@ -83,7 +84,9 @@ async function main() {
 
   const talRows: Array<{ enrichedId: string; domain: string; name: string; tier: number; score: number }> = [];
   for (const c of page.companies) {
-    const fm = cachedFirmographics(c.domain) ?? { name: c.name, industry: c.industry, headcount: c.employees, revenue: null, geography: c.geography, fundingStage: 'private', techStack: [] };
+    // Prefer PDL (real firmographics + tech tags, own free credits); else the
+    // Prospeo firmographics captured during discovery; else the search basics.
+    const fm: ProspeoCompanyData = (await pdlEnrichCompany(c.domain)) ?? cachedFirmographics(c.domain) ?? { name: c.name, industry: c.industry, headcount: c.employees, revenue: null, geography: c.geography, fundingStage: 'private', techStack: [] };
     const raw = await prisma.rawAccount.create({ data: { workspaceId, jobId: tamJob.id, domain: c.domain, name: fm.name ?? c.domain, source: 'prospeo', createdAt: now } });
     const enr = await prisma.enrichedAccount.create({ data: { workspaceId, jobId: enrJob.id, accountId: raw.id, domain: c.domain, name: fm.name ?? c.domain, industry: fm.industry, headcount: fm.headcount, revenue: fm.revenue, geography: fm.geography, fundingStage: fm.fundingStage, techStack: fm.techStack, dataQualityScore: 0.95, enrichmentSources: ['prospeo'], enrichedAt: now } });
     const s = scoreOf(fm);

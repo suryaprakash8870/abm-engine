@@ -38,6 +38,13 @@ CLEARBIT_API_KEY=
 BUILTWITH_API_KEY=
 RB2B_API_KEY=
 
+# People Data Labs — company enrichment (Engine 03), free-tier alternative.
+# Set PDL_API_KEY → enrichment prefers PDL (real firmographics + tech tags) from
+# its own free 100/month pool, so it doesn't drain Prospeo. Falls back on a 404 /
+# error / budget cap. PDL_CREDIT_BUDGET caps spend per worker process (default 60).
+PDL_API_KEY=
+PDL_CREDIT_BUDGET=
+
 # Prospeo — contact sourcing + email reveal (Apollo alternative, Engine 06).
 # Enable by setting BOTH: CONTACT_SOURCE=prospeo and PROSPEO_API_KEY.
 # Unset either → contacts use Apollo/mock exactly as before (full rollback).
