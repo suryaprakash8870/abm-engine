@@ -25,7 +25,7 @@
  * @see https://prospeo.io/api-docs/search-person · /api-docs/enrich-person
  */
 
-import type { ApolloPerson, EmailVerifyResult } from './apollo';
+import type { ApolloPerson, EmailVerifyResult, ApolloSearchParams, ApolloCompany, ApolloSearchPage } from './apollo';
 
 type Role = 'decision_maker' | 'champion' | 'influencer';
 
@@ -257,6 +257,90 @@ function extractTech(v: unknown): string[] {
     .map((t) => (typeof t === 'string' ? t : (str((t as Record<string, unknown>).name) ?? str((t as Record<string, unknown>).technology) ?? str((t as Record<string, unknown>).value))))
     .filter((s): s is string => !!s)
     .slice(0, 25);
+}
+
+// ── Company SEARCH (TAM discovery) + shared firmographic cache ───────────────
+
+/** Filled during a search so the enrichment step can reuse the firmographics for
+ *  free (search-company returns them inline). Keyed by website domain. */
+const firmographicCache = new Map<string, ProspeoCompanyData>();
+export function cachedFirmographics(domain: string): ProspeoCompanyData | undefined {
+  return firmographicCache.get(domain.trim().toLowerCase().replace(/^www\./, ''));
+}
+
+// Valid Prospeo headcount buckets (per Filters Documentation).
+const HEADCOUNT_BUCKETS: Array<[number, number, string]> = [
+  [1, 10, '1-10'], [11, 20, '11-20'], [21, 50, '21-50'], [51, 100, '51-100'], [101, 200, '101-200'],
+  [201, 500, '201-500'], [501, 1000, '501-1000'], [1001, 2000, '1001-2000'], [2001, 5000, '2001-5000'],
+  [5001, 10000, '5001-10000'], [10001, Number.POSITIVE_INFINITY, '10000+'],
+];
+function headcountBuckets(min: number, max: number): string[] {
+  return HEADCOUNT_BUCKETS.filter(([lo, hi]) => hi >= min && lo <= max).map(([, , b]) => b);
+}
+
+// Prospeo's tech industries collapse into a couple of broad company_industry
+// values; include both for any software / IT / security / cloud ICP.
+function mapIndustries(icpIndustries: string[]): string[] {
+  const t = icpIndustries.join(' ').toLowerCase();
+  const out: string[] = [];
+  if (/soft|saas|cyber|secur|cloud|tech|internet|data|platform|develop|it\b|information/.test(t) || icpIndustries.length === 0) {
+    out.push('Software Development', 'IT Services and IT Consulting');
+  }
+  return out.length ? out : ['Software Development'];
+}
+
+function domainFromWebsite(website: string, fallback: string): string {
+  const d = website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').toLowerCase();
+  return d || fallback.toLowerCase() || 'unknown.com';
+}
+
+function companyToFirmographics(c: Record<string, unknown>): { domain: string; company: ApolloCompany; data: ProspeoCompanyData } {
+  const domain = domainFromWebsite(str(c.website) ?? '', str(c.domain) ?? '');
+  const loc = c.location as Record<string, unknown> | null;
+  const data: ProspeoCompanyData = {
+    name: str(c.name),
+    industry: str(c.industry),
+    headcount: typeof c.employee_count === 'number' ? c.employee_count : null,
+    revenue: str(c.revenue_range_printed) ?? str(c.revenue_range),
+    geography: str(loc?.country),
+    fundingStage: (str(c.type) ?? '').toLowerCase().includes('public') ? 'public' : 'private',
+    techStack: extractTech(c.technology),
+  };
+  return {
+    domain,
+    data,
+    company: { domain, name: data.name ?? domain, apolloId: str(c.company_id) ?? '', industry: data.industry, employees: data.headcount, geography: data.geography },
+  };
+}
+
+/**
+ * Find real companies matching an ICP (Apollo-compatible shape). Serves ONE page
+ * (25 companies) for 1 credit and caches each company's firmographics so the
+ * enrichment step reuses them free. Returns hasMore:false to cap credit spend.
+ */
+export async function searchCompanies(params: ApolloSearchParams, page: number, perPage = 25, _accountLimit = 1000): Promise<ApolloSearchPage> {
+  const filters: Record<string, unknown> = { company_industry: { include: mapIndustries(params.industries) } };
+  const buckets = headcountBuckets(params.employeeMin || 1, params.employeeMax || 100000);
+  if (buckets.length) filters.company_headcount_range = buckets;
+
+  reserve(1);
+  let json: Record<string, unknown>;
+  try {
+    json = await post('/search-company', { page: 1, filters });
+  } catch (e) {
+    if (e instanceof ProspeoApiError && /NO_RESULTS/.test(e.message)) return { companies: [], total: 0, page, perPage, hasMore: false, raw: {} };
+    throw e;
+  }
+  const arr = (json.results ?? (json.response as Record<string, unknown>)?.results ?? []) as unknown;
+  const rows = Array.isArray(arr) ? arr.map((it) => ((it as Record<string, unknown>).company ?? it) as Record<string, unknown>) : [];
+  const companies: ApolloCompany[] = [];
+  for (const c of rows) {
+    const { domain, company, data } = companyToFirmographics(c);
+    firmographicCache.set(domain, data);
+    companies.push(company);
+  }
+  const total = Number((json.pagination as Record<string, unknown> | undefined)?.total_count ?? companies.length);
+  return { companies, total, page, perPage, hasMore: false, raw: json };
 }
 
 /** Real firmographics + technographics for one company (1 credit; free re-enrich in 90d). */

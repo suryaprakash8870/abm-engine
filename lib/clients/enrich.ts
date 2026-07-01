@@ -7,6 +7,8 @@
  * back to mock when the provider isn't reachable.
  */
 
+import { cachedFirmographics, enrichCompany as prospeoEnrichCompany } from './prospeo';
+
 export interface EnrichmentData {
   industry: string | null;
   headcount: number | null;
@@ -51,9 +53,19 @@ function mockEnrich(domain: string): EnrichmentData {
   };
 }
 
+function useProspeoEnrich(): boolean {
+  return process.env.TAM_SOURCE === 'prospeo' && !!process.env.PROSPEO_API_KEY;
+}
+
 export async function enrichCompany(domain: string, _name: string): Promise<EnrichmentData> {
+  // Real firmographics via Prospeo: reuse what the TAM search already fetched for
+  // this domain (free), else a live enrich-company. Falls back to mock otherwise.
+  if (useProspeoEnrich()) {
+    const fm = cachedFirmographics(domain) ?? (await prospeoEnrichCompany(domain).catch(() => null));
+    if (fm) {
+      return { industry: fm.industry, headcount: fm.headcount, revenue: fm.revenue, geography: fm.geography, fundingStage: fm.fundingStage, techStack: fm.techStack, dataQualityScore: 0.95, sources: ['prospeo'] };
+    }
+  }
   if (shouldUseMock()) return mockEnrich(domain);
-  // TODO(integration): Apollo org enrich → Clearbit fallback → BuiltWith for tech.
-  // Apollo org enrich also requires a paid plan; fall back to mock if unreachable.
   return mockEnrich(domain);
 }

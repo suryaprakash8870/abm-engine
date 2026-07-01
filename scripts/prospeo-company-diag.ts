@@ -1,39 +1,27 @@
 import 'dotenv/config';
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function call(filters: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function main() {
+  const filters = {
+    company_industry: { include: ['Software Development', 'IT Services and IT Consulting'] },
+    company_headcount_range: ['501-1000', '1001-2000', '2001-5000'],
+  };
   const res = await fetch('https://api.prospeo.io/search-company', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-KEY': process.env.PROSPEO_API_KEY ?? '' },
     body: JSON.stringify({ page: 1, filters }),
   });
   const j = (await res.json()) as Record<string, unknown>;
-  return { status: res.status, ...j };
-}
-
-function printCompanies(j: Record<string, unknown>): void {
+  console.log('HTTP', res.status, '| error:', j.error, '| error_code:', j.error_code ?? '', '|', String(j.filter_error ?? ''));
   const arr = (j.results ?? (j.response as Record<string, unknown>)?.results ?? []) as unknown;
-  if (!Array.isArray(arr)) { console.log('  (no results array) keys:', Object.keys(j).join(',')); return; }
-  console.log('  COUNT:', arr.length);
-  for (const it of arr.slice(0, 8)) {
-    const c = ((it as Record<string, unknown>).company ?? it) as Record<string, unknown>;
-    console.log('   •', c.name, '|', c.website ?? c.domain, '|', c.industry, '| hc:', c.employee_count ?? c.headcount ?? c.current_headcount ?? c.company_headcount);
+  if (Array.isArray(arr)) {
+    console.log('COUNT:', arr.length, '| pagination:', JSON.stringify(j.pagination ?? {}).slice(0, 120));
+    for (const it of arr.slice(0, 10)) {
+      const c = ((it as Record<string, unknown>).company ?? it) as Record<string, unknown>;
+      console.log('  •', c.name, '|', c.website ?? c.domain, '|', c.industry, '| hc:', c.employee_count ?? c.employee_range);
+    }
+    console.log('\nRAW first item:', JSON.stringify(arr[0]).slice(0, 1200));
+  } else {
+    console.log('No results array. RAW:', JSON.stringify(j).slice(0, 600));
   }
-  console.log('\n  RAW first item:', JSON.stringify(arr[0]).slice(0, 1400));
-}
-
-async function main() {
-  const attempts: Array<{ label: string; filters: Record<string, unknown> }> = [
-    { label: 'company_industry {include} LinkedIn names', filters: { company_industry: { include: ['Computer Software', 'Information Technology & Services', 'Computer & Network Security', 'Internet'] } } },
-    { label: 'company_industry {include} short names', filters: { company_industry: { include: ['Software', 'Information Technology', 'Security', 'Internet'] } } },
-  ];
-  for (const a of attempts) {
-    const j = await call(a.filters);
-    if (j.status === 200 && j.error !== true) { console.log('✓ WORKS →', a.label); printCompanies(j); return; }
-    console.log('✗', a.label, '→', j.status, j.error_code, '|', String(j.filter_error ?? '').slice(0, 140));
-    await wait(3000); // stay under Prospeo's per-second cap
-  }
-  console.log('\nStill no luck — will switch strategy.');
 }
 main().then(() => process.exit(0)).catch((e) => { console.error('ERR', e); process.exit(1); });

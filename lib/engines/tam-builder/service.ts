@@ -11,7 +11,7 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../db/client';
-import { searchCompanies, type ApolloSearchParams, type ApolloCompany } from '../../clients/apollo';
+import { searchCompanies, type ApolloSearchParams, type ApolloCompany } from '../../clients/company-provider';
 import type { IcpCreatedPayload } from '../../events';
 import { completionCheck } from './validation';
 import { publishTamSearchCompleted, publishTamSearchFailed } from './publisher';
