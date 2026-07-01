@@ -44,9 +44,12 @@ export default function ContactsPage() {
     setBusy(false);
   };
 
+  // Manual, credit-controlled: sources only the top 5 by score (not all Tier-1/2)
+  // so one click can't drain paid data-provider credits on every account.
+  const SOURCE_TOP_N = 5;
   const handleSourceBatch = async () => {
     setBusy(true); setError(null); setNotice(null);
-    const res = await sourceBatch();
+    const res = await sourceBatch(SOURCE_TOP_N);
     if (res.ok && res.data) { setNotice(res.data.message); pollFor(8); }
     else setError(res.error?.message ?? 'Batch sourcing failed.');
     setBusy(false);
@@ -65,13 +68,16 @@ export default function ContactsPage() {
           <h1 className="font-display text-2xl font-medium text-white">Buying Committees</h1>
           <Pill tone="green">{accounts.length} accounts</Pill>
         </div>
-        <button
-          onClick={handleSourceBatch}
-          disabled={busy || tier1.length === 0}
-          className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-[0_8px_24px_-12px_rgba(197,251,80,0.55)] hover:bg-accent-hover disabled:bg-white/10 disabled:text-white/30 disabled:shadow-none transition"
-        >
-          {busy ? 'Working…' : `Source all Tier 1 (${tier1.length})`}
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-xs text-white/35 sm:inline">Sources the top {SOURCE_TOP_N} by score — keeps credit use in check</span>
+          <button
+            onClick={handleSourceBatch}
+            disabled={busy || tier1.length === 0}
+            className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-[0_8px_24px_-12px_rgba(197,251,80,0.55)] hover:bg-accent-hover disabled:bg-white/10 disabled:text-white/30 disabled:shadow-none transition"
+          >
+            {busy ? 'Working…' : `Source top ${Math.min(SOURCE_TOP_N, tier1.length)}${tier1.length > SOURCE_TOP_N ? ` of ${tier1.length}` : ''}`}
+          </button>
+        </div>
       </div>
 
       {notice && (

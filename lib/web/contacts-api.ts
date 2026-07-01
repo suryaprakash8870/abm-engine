@@ -56,8 +56,8 @@ export const sourceContacts = (accountId: string) =>
     body: JSON.stringify({ account_id: accountId }),
   });
 
-export const sourceBatch = () =>
-  call<{ queued: number; message: string }>('/api/v1/contacts/source-batch', { method: 'POST' });
+export const sourceBatch = (limit = 5) =>
+  call<{ queued: number; message: string }>('/api/v1/contacts/source-batch', { method: 'POST', body: JSON.stringify({ limit }) });
 
 export const updateContactRole = (contactId: string, role: StakeholderRole) =>
   call<{ id: string; role: string }>(`/api/v1/contacts/${contactId}/role`, {
