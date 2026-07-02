@@ -13,6 +13,7 @@ import { me } from '@/lib/web/auth-api';
 import { getAwarenessFeed, type FeedAccount } from '@/lib/web/awareness-api';
 import { getPlayFeed, type Play } from '@/lib/web/plays-api';
 import { getFlywheelMetrics, type MetricsData } from '@/lib/web/flywheel-api';
+import { listIcps } from '@/lib/web/icp-api';
 
 interface PipelineStatus { engines: { num: string; count: number; active: boolean }[] }
 
@@ -36,22 +37,25 @@ export default function TodayPage() {
   const [plays, setPlays] = useState<Play[]>([]);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
+  const [hasIcp, setHasIcp] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const [m, f, p, mt, ps] = await Promise.all([
+      const [m, f, p, mt, ps, icps] = await Promise.all([
         me(),
         getAwarenessFeed(),
         getPlayFeed('fired'),
         getFlywheelMetrics(),
         fetch('/api/v1/pipeline/status').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        listIcps(),
       ]);
       if (m.ok && m.data) setName(firstName(m.data.email));
       if (f.ok) setFeed(f.data ?? []);
       if (p.ok) setPlays(p.data ?? []);
       if (mt.ok) setMetrics(mt.data ?? null);
       if (ps?.data) setPipeline(ps.data);
+      setHasIcp(icps.ok ? (icps.data?.length ?? 0) > 0 : false);
       setLoading(false);
     })();
   }, []);
@@ -67,6 +71,37 @@ export default function TodayPage() {
     { label: 'Plays fired', value: engine('09'), href: '/plays' },
     { label: 'Deals won', value: metrics?.closed_won ?? engine('11'), href: '/insights' },
   ];
+
+  // Fresh workspace: no ICP yet → guide to Step 1 instead of a zeroed-out dashboard.
+  if (!loading && hasIcp === false) {
+    return (
+      <div className="flex min-h-[62vh] items-center justify-center">
+        <div className="animate-rise w-full max-w-lg rounded-3xl border border-accent/20 bg-accent/[0.05] p-10 text-center bg-grain">
+          <span className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-[12px] font-medium text-accent">
+            <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent" /> Step 1 · start here
+          </span>
+          <h1 className="mt-5 font-display text-[28px] font-medium tracking-tight text-white sm:text-[32px]">
+            Welcome{name !== 'there' ? `, ${name}` : ''}. Let&apos;s build your ICP.
+          </h1>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-white/55">
+            Your Ideal Customer Profile is the starting point — it drives account sourcing,
+            scoring, and every play downstream. Define it once and the engines take over.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+            <Link href="/icp" className="rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground shadow-[0_12px_32px_-12px_rgba(197,251,80,0.6)] transition hover:bg-accent-hover">
+              Build your ICP →
+            </Link>
+            <Link href="/guide" className="rounded-xl border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-medium text-white transition hover:bg-white/10">
+              How it works
+            </Link>
+          </div>
+          <p className="mt-6 text-[12px] text-white/35">
+            Once your ICP is set, this becomes your daily home — hot accounts, plays, and pipeline.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-7">
