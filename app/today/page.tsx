@@ -74,31 +74,57 @@ export default function TodayPage() {
 
   // Fresh workspace: no ICP yet → guide to Step 1 instead of a zeroed-out dashboard.
   if (!loading && hasIcp === false) {
+    const stages = [
+      { n: '1', label: 'ICP' },
+      { n: '2', label: 'Accounts' },
+      { n: '3', label: 'Scoring' },
+      { n: '4', label: 'Contacts' },
+      { n: '5', label: 'Plays' },
+    ];
     return (
-      <div className="flex min-h-[62vh] items-center justify-center">
-        <div className="animate-rise w-full max-w-lg rounded-3xl border border-accent/20 bg-accent/[0.05] p-10 text-center bg-grain">
-          <span className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-[12px] font-medium text-accent">
-            <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent" /> Step 1 · start here
+      <div className="relative flex min-h-[74vh] flex-col items-center justify-center overflow-hidden px-4 text-center">
+        {/* ambient glow */}
+        <div className="pointer-events-none absolute left-1/2 top-1/3 h-72 w-72 -translate-x-1/2 animate-breathe rounded-full bg-accent/10 blur-3xl" />
+
+        <span className="animate-rise relative inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3.5 py-1.5 text-[12px] font-medium tracking-wide text-accent">
+          <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-accent" /> Step 1 of 5 · start here
+        </span>
+
+        <h1 className="animate-rise relative mt-6 max-w-2xl font-display text-[34px] font-medium leading-[1.06] tracking-tight text-white sm:text-[48px]" style={{ animationDelay: '60ms' }}>
+          Welcome{name !== 'there' ? `, ${name}` : ''}. Let&apos;s build<br className="hidden sm:block" /> your{' '}
+          <span className="relative whitespace-nowrap text-accent">
+            ICP
+            <span className="absolute inset-x-0 -bottom-1 h-2 -skew-x-6 rounded bg-accent/20" />
           </span>
-          <h1 className="mt-5 font-display text-[28px] font-medium tracking-tight text-white sm:text-[32px]">
-            Welcome{name !== 'there' ? `, ${name}` : ''}. Let&apos;s build your ICP.
-          </h1>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-white/55">
-            Your Ideal Customer Profile is the starting point — it drives account sourcing,
-            scoring, and every play downstream. Define it once and the engines take over.
-          </p>
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/icp" className="rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground shadow-[0_12px_32px_-12px_rgba(197,251,80,0.6)] transition hover:bg-accent-hover">
-              Build your ICP →
-            </Link>
-            <Link href="/guide" className="rounded-xl border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-medium text-white transition hover:bg-white/10">
-              How it works
-            </Link>
-          </div>
-          <p className="mt-6 text-[12px] text-white/35">
-            Once your ICP is set, this becomes your daily home — hot accounts, plays, and pipeline.
-          </p>
+          .
+        </h1>
+
+        <p className="animate-rise relative mt-5 max-w-md text-[15px] leading-relaxed text-white/55" style={{ animationDelay: '120ms' }}>
+          Your Ideal Customer Profile is the seed of the whole engine. Define it once and every stage below runs automatically.
+        </p>
+
+        {/* pipeline preview — ICP is lit; the rest unlock after it's defined */}
+        <div className="animate-rise relative mt-10 flex items-start justify-center gap-1.5 sm:gap-2.5" style={{ animationDelay: '180ms' }}>
+          {stages.map((s, i) => (
+            <div key={s.label} className="flex items-start gap-1.5 sm:gap-2.5">
+              <div className={`flex w-[52px] flex-col items-center gap-2 sm:w-16 ${i === 0 ? '' : 'opacity-40'}`}>
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl border font-display text-[14px] font-semibold ${i === 0 ? 'border-accent/50 bg-accent/15 text-accent shadow-[0_0_22px_-4px_rgba(197,251,80,0.55)]' : 'border-white/10 bg-white/[0.03] text-white/60'}`}>{s.n}</div>
+                <span className={`text-[11px] font-medium ${i === 0 ? 'text-white/90' : 'text-white/45'}`}>{s.label}</span>
+              </div>
+              {i < stages.length - 1 && <span className={`mt-5 h-px w-3 shrink-0 sm:w-6 ${i === 0 ? 'bg-accent/40' : 'bg-white/10'}`} />}
+            </div>
+          ))}
         </div>
+
+        <div className="animate-rise relative mt-11" style={{ animationDelay: '240ms' }}>
+          <Link href="/icp" className="group inline-flex items-center gap-2 rounded-xl bg-accent px-7 py-3.5 text-[15px] font-semibold text-accent-foreground shadow-[0_14px_36px_-12px_rgba(197,251,80,0.65)] transition hover:bg-accent-hover">
+            Build your ICP <span className="transition-transform group-hover:translate-x-0.5">→</span>
+          </Link>
+        </div>
+
+        <p className="animate-rise relative mt-5 text-[12px] text-white/35" style={{ animationDelay: '300ms' }}>
+          About a minute · 12 quick questions
+        </p>
       </div>
     );
   }
