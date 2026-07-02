@@ -344,7 +344,7 @@ export async function searchCompanies(params: ApolloSearchParams, page: number, 
   reserve(1);
   let json: Record<string, unknown>;
   try {
-    json = await post('/search-company', { page: 1, filters });
+    json = await post('/search-company', { page, filters });
   } catch (e) {
     if (e instanceof ProspeoApiError && /NO_RESULTS/.test(e.message)) return { companies: [], total: 0, page, perPage, hasMore: false, raw: {} };
     throw e;

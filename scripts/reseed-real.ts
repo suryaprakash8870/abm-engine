@@ -78,12 +78,22 @@ async function main() {
   await prisma.scoringFormula.create({ data: { workspaceId, icpId: icp.id, version: 1, criteria: CRITERIA as unknown as Prisma.InputJsonValue, tierBoundaries: BOUNDARIES as unknown as Prisma.InputJsonValue, isFallback: false, createdBy: 'system', createdAt: now } });
   const tal = await prisma.targetAccountList.create({ data: { workspaceId, name: 'Target Account List', version: 1, accountCount: 0, status: 'finalized', reviewStatus: 'reviewed', createdAt: now, updatedAt: now } });
 
-  // ── Discover real companies (1 credit) ──
-  const page = await searchCompanies({ industries: ICP_INDUSTRIES, employeeMin: 500, employeeMax: 5000, geographies: [] }, 1);
-  console.log(`Discovered ${page.companies.length} real companies (of ${page.total.toLocaleString()} matching). Scoring…\n`);
+  // ── Discover real companies (1 Prospeo credit per 25-company page) ──
+  //    Count is arg #2 (after email), default 25, capped at 100 to protect credits.
+  const COUNT = Math.max(1, Math.min(Number(process.argv[3]) || 25, 100));
+  const discovered: Awaited<ReturnType<typeof searchCompanies>>['companies'] = [];
+  let matchTotal = 0;
+  for (let pg = 1; discovered.length < COUNT && pg <= Math.ceil(COUNT / 25) + 1; pg++) {
+    const res = await searchCompanies({ industries: ICP_INDUSTRIES, employeeMin: 500, employeeMax: 5000, geographies: [] }, pg);
+    matchTotal = res.total || matchTotal;
+    if (res.companies.length === 0) break;
+    discovered.push(...res.companies);
+  }
+  const companies = discovered.slice(0, COUNT);
+  console.log(`Discovered ${companies.length} real companies (of ${matchTotal.toLocaleString()} matching, ${Math.ceil(companies.length / 25)} page(s)). Scoring…\n`);
 
   const talRows: Array<{ enrichedId: string; domain: string; name: string; tier: number; score: number }> = [];
-  for (const c of page.companies) {
+  for (const c of companies) {
     // Prefer PDL (real firmographics + tech tags, own free credits); else the
     // Prospeo firmographics captured during discovery; else the search basics.
     const fm: ProspeoCompanyData = (await pdlEnrichCompany(c.domain)) ?? cachedFirmographics(c.domain) ?? { name: c.name, industry: c.industry, headcount: c.employees, revenue: null, geography: c.geography, fundingStage: 'private', techStack: [] };
@@ -100,6 +110,8 @@ async function main() {
   for (const r of talRows) await prisma.talAccount.create({ data: { workspaceId, talId: tal.id, accountId: r.enrichedId, domain: r.domain, name: r.name, tier: r.tier, score: r.score, addedAt: now } });
   await prisma.targetAccountList.update({ where: { id: tal.id }, data: { accountCount: talRows.length } });
   await prisma.talVersion.create({ data: { workspaceId, talId: tal.id, versionNumber: 1, snapshot: { account_count: talRows.length } as unknown as Prisma.InputJsonValue, sourceCorrelationId: 'real_discover_v1', createdAt: now } });
+  await prisma.tamBuildJob.update({ where: { id: tamJob.id }, data: { totalFound: companies.length, processed: companies.length } });
+  await prisma.enrichmentJob.update({ where: { id: enrJob.id }, data: { total: companies.length, enriched: companies.length, qualifiedCount: talRows.length, disqualifiedCount: companies.length - talRows.length } });
 
   // ── Committees for the top few (credit-capped) ──
   const top = [...talRows].sort((a, b) => b.score - a.score).slice(0, CONTACTS_FOR_TOP);
